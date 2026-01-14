@@ -211,18 +211,20 @@ mod tests {
 
         app.spawn_commands().await;
 
-        // Wait a bit for output
-        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-
-        // Poll multiple times to receive output
-        for _ in 0..10 {
+        // Wait a bit for output and poll multiple times
+        for _ in 0..50 {
             app.poll_commands().await;
             tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+
+            // Early exit if we got output
+            if !app.tab_manager().current_tab().buffer().is_empty() {
+                break;
+            }
         }
 
         // Check if output was received
         let buffer = app.tab_manager().current_tab().buffer();
-        assert!(buffer.is_empty(), "Should have received output");
+        assert!(!buffer.is_empty(), "Should have received output");
     }
 
     #[tokio::test]
