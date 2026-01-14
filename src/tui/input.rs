@@ -5,6 +5,12 @@ use crate::app::{App, Mode};
 
 /// Handle key event and update app state
 pub fn handle_key(app: &mut App, key: KeyEvent) {
+    // Ctrl-C quits from any mode
+    if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
+        app.quit();
+        return;
+    }
+
     match app.mode() {
         Mode::Normal => handle_normal_mode(app, key),
         Mode::Search => handle_search_mode(app, key),
@@ -14,9 +20,6 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
 /// Handle key event in Normal mode
 fn handle_normal_mode(app: &mut App, key: KeyEvent) {
     match key.code {
-        // Quit
-        KeyCode::Char('q') => app.quit(),
-
         // Tab navigation
         KeyCode::Char('h') => app.tab_manager_mut().prev_tab(),
         KeyCode::Char('l') => app.tab_manager_mut().next_tab(),
@@ -128,11 +131,21 @@ mod tests {
     // Normal mode tests
 
     #[test]
-    fn input_normal_mode_q_quits() {
+    fn input_ctrl_c_quits_from_normal_mode() {
         let mut app = App::new(vec!["cmd".into()], 100);
         assert!(!app.should_quit());
 
-        handle_key(&mut app, key(KeyCode::Char('q')));
+        handle_key(&mut app, key_with_ctrl('c'));
+        assert!(app.should_quit());
+    }
+
+    #[test]
+    fn input_ctrl_c_quits_from_search_mode() {
+        let mut app = App::new(vec!["cmd".into()], 100);
+        app.set_mode(Mode::Search);
+        assert!(!app.should_quit());
+
+        handle_key(&mut app, key_with_ctrl('c'));
         assert!(app.should_quit());
     }
 

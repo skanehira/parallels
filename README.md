@@ -8,6 +8,8 @@
 
 A TUI tool to run multiple commands in parallel and view their output in real-time.
 
+![](https://i.gyazo.com/1318e9e6780b3247057936e0b05ebe6e.png)
+
 ## Features
 
 - Run multiple commands concurrently
