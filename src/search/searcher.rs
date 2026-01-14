@@ -1,3 +1,5 @@
+use tui_input::{Input, InputRequest};
+
 use crate::buffer::OutputBuffer;
 
 /// Search match information
@@ -13,7 +15,7 @@ pub struct Match {
 
 /// Search state management structure
 pub struct SearchState {
-    query: String,
+    input: Input,
     matches: Vec<Match>,
     current_index: Option<usize>,
 }
@@ -22,7 +24,7 @@ impl SearchState {
     /// Create an empty search state
     pub fn new() -> Self {
         Self {
-            query: String::new(),
+            input: Input::default(),
             matches: Vec::new(),
             current_index: None,
         }
@@ -30,7 +32,12 @@ impl SearchState {
 
     /// Get the search query
     pub fn query(&self) -> &str {
-        &self.query
+        self.input.value()
+    }
+
+    /// Handle input request from tui-input
+    pub fn handle_input(&mut self, req: InputRequest) {
+        self.input.handle(req);
     }
 
     /// Set search query and search the buffer for matches
@@ -38,7 +45,7 @@ impl SearchState {
     /// TODO: Consider using more efficient search algorithms (e.g., Boyer-Moore,
     /// Aho-Corasick, or regex-based search) for better performance with large buffers.
     pub fn search(&mut self, query: &str, buffer: &OutputBuffer) {
-        self.query = query.to_string();
+        self.input = query.into();
         self.matches.clear();
         self.current_index = None;
 
@@ -122,14 +129,14 @@ impl SearchState {
 
     /// Clear search state
     pub fn clear(&mut self) {
-        self.query.clear();
+        self.input.reset();
         self.matches.clear();
         self.current_index = None;
     }
 
     /// Check if search is active (query is not empty)
     pub fn is_active(&self) -> bool {
-        !self.query.is_empty()
+        !self.query().is_empty()
     }
 }
 

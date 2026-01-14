@@ -1,9 +1,9 @@
 use ratatui::{
+    Frame,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph, Tabs, Wrap},
-    Frame,
 };
 
 use crate::app::{App, Mode};
@@ -248,7 +248,7 @@ mod tests {
     use super::*;
     use crate::buffer::{OutputKind, OutputLine};
     use ansi_to_tui::IntoText;
-    use ratatui::{backend::TestBackend, Terminal};
+    use ratatui::{Terminal, backend::TestBackend};
 
     /// Convert terminal buffer to string for snapshot testing
     fn buffer_to_string(terminal: &Terminal<TestBackend>) -> String {

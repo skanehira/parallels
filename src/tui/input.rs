@@ -1,4 +1,5 @@
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
+use tui_input::backend::crossterm::to_input_request;
 
 use crate::app::{App, Mode};
 
@@ -56,17 +57,17 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) {
 
         // Navigate search matches (only when search is active)
         KeyCode::Char('n') => {
-            if app.search_state().is_active() {
-                if let Some(line) = app.search_state_mut().next_match() {
-                    app.tab_manager_mut().current_tab_mut().scroll_to_line(line);
-                }
+            if app.search_state().is_active()
+                && let Some(line) = app.search_state_mut().next_match()
+            {
+                app.tab_manager_mut().current_tab_mut().scroll_to_line(line);
             }
         }
         KeyCode::Char('N') => {
-            if app.search_state().is_active() {
-                if let Some(line) = app.search_state_mut().prev_match() {
-                    app.tab_manager_mut().current_tab_mut().scroll_to_line(line);
-                }
+            if app.search_state().is_active()
+                && let Some(line) = app.search_state_mut().prev_match()
+            {
+                app.tab_manager_mut().current_tab_mut().scroll_to_line(line);
             }
         }
 
@@ -87,21 +88,14 @@ fn handle_search_mode(app: &mut App, key: KeyEvent) {
             app.set_mode(Mode::Normal);
         }
 
-        // Delete character from query
-        KeyCode::Backspace => {
-            let mut query = app.search_state().query().to_string();
-            query.pop();
-            app.search_in_current_tab(&query);
+        // Delegate to tui-input for text editing (Emacs-like keybindings)
+        _ => {
+            if let Some(req) = to_input_request(&Event::Key(key)) {
+                app.search_state_mut().handle_input(req);
+                let query = app.search_state().query().to_string();
+                app.search_in_current_tab(&query);
+            }
         }
-
-        // Add character to query (including n/N)
-        KeyCode::Char(c) => {
-            let mut query = app.search_state().query().to_string();
-            query.push(c);
-            app.search_in_current_tab(&query);
-        }
-
-        _ => {}
     }
 }
 
@@ -365,5 +359,55 @@ mod tests {
             app.tab_manager().current_tab().scroll_offset(),
             initial_offset
         );
+    }
+
+    // Emacs-like keybindings tests (via tui-input)
+
+    #[test]
+    fn input_search_mode_ctrl_h_deletes_char() {
+        let mut app = App::new(vec!["cmd".into()], 100);
+        app.set_mode(Mode::Search);
+
+        // Type "hello"
+        for c in "hello".chars() {
+            handle_key(&mut app, key(KeyCode::Char(c)));
+        }
+        assert_eq!(app.search_state().query(), "hello");
+
+        // Ctrl+H should delete last character
+        handle_key(&mut app, key_with_ctrl('h'));
+        assert_eq!(app.search_state().query(), "hell");
+    }
+
+    #[test]
+    fn input_search_mode_ctrl_w_deletes_word() {
+        let mut app = App::new(vec!["cmd".into()], 100);
+        app.set_mode(Mode::Search);
+
+        // Type "hello world"
+        for c in "hello world".chars() {
+            handle_key(&mut app, key(KeyCode::Char(c)));
+        }
+        assert_eq!(app.search_state().query(), "hello world");
+
+        // Ctrl+W should delete "world"
+        handle_key(&mut app, key_with_ctrl('w'));
+        assert_eq!(app.search_state().query(), "hello ");
+    }
+
+    #[test]
+    fn input_search_mode_ctrl_u_clears_line() {
+        let mut app = App::new(vec!["cmd".into()], 100);
+        app.set_mode(Mode::Search);
+
+        // Type "hello world"
+        for c in "hello world".chars() {
+            handle_key(&mut app, key(KeyCode::Char(c)));
+        }
+        assert_eq!(app.search_state().query(), "hello world");
+
+        // Ctrl+U should clear to beginning of line
+        handle_key(&mut app, key_with_ctrl('u'));
+        assert_eq!(app.search_state().query(), "");
     }
 }
