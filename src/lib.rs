@@ -1,7 +1,5 @@
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn it_works() {
-        assert_eq!(2 + 2, 4);
-    }
-}
+pub mod app;
+pub mod buffer;
+pub mod command;
+pub mod search;
+pub mod tui;

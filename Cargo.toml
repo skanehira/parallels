@@ -4,5 +4,17 @@ version = "0.0.1"
 authors = ["skanehira"]
 edition = "2024"
 
+[[bin]]
+name = "cargo-p"
+path = "src/main.rs"
+
 [dependencies]
-clap = { version = "4.5.42", features = ["derive"] }
+clap = { version = "4.5", features = ["derive"] }
+ratatui = "0.30"
+crossterm = "0.29"
+tokio = { version = "1.49", features = ["full"] }
+thiserror = "2.0"
+
+[dev-dependencies]
+insta = "1.42"
+rstest = "0.24"

@@ -1,13 +1,15 @@
 use clap::Parser;
 
 #[derive(Parser, Debug)]
-#[command(author, version, about, long_about = None)]
+#[command(author, version, about = "Run multiple commands in parallel with TUI", long_about = None)]
 struct Args {
-    #[arg(short, long)]
-    name: String,
+    /// Commands to run in parallel
+    #[arg(required = true)]
+    commands: Vec<String>,
 }
 
 fn main() {
     let args = Args::parse();
-    println!("Hello, {}!", args.name);
+    println!("Commands: {:?}", args.commands);
+    // To be implemented in phase 10
 }
