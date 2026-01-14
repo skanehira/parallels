@@ -42,6 +42,9 @@ impl SearchState {
 
     /// Set search query and search the buffer for matches
     ///
+    /// Uses smartcase: if query contains no uppercase letters, search is
+    /// case-insensitive. If query contains uppercase, search is case-sensitive.
+    ///
     /// TODO: Consider using more efficient search algorithms (e.g., Boyer-Moore,
     /// Aho-Corasick, or regex-based search) for better performance with large buffers.
     pub fn search(&mut self, query: &str, buffer: &OutputBuffer) {
@@ -53,18 +56,39 @@ impl SearchState {
             return;
         }
 
+        // Smartcase: case-insensitive if query has no uppercase letters
+        let case_sensitive = query.chars().any(|c| c.is_uppercase());
+
         for (line_idx, line) in buffer.iter().enumerate() {
             // Use pre-stripped content for searching
             let content = line.plain();
-            let mut start = 0;
-            while let Some(pos) = content[start..].find(query) {
-                let absolute_pos = start + pos;
-                self.matches.push(Match {
-                    line: line_idx,
-                    start: absolute_pos,
-                    len: query.len(),
-                });
-                start = absolute_pos + query.len();
+
+            if case_sensitive {
+                // Case-sensitive search
+                let mut start = 0;
+                while let Some(pos) = content[start..].find(query) {
+                    let absolute_pos = start + pos;
+                    self.matches.push(Match {
+                        line: line_idx,
+                        start: absolute_pos,
+                        len: query.len(),
+                    });
+                    start = absolute_pos + query.len();
+                }
+            } else {
+                // Case-insensitive search
+                let query_lower = query.to_lowercase();
+                let content_lower = content.to_lowercase();
+                let mut start = 0;
+                while let Some(pos) = content_lower[start..].find(&query_lower) {
+                    let absolute_pos = start + pos;
+                    self.matches.push(Match {
+                        line: line_idx,
+                        start: absolute_pos,
+                        len: query.len(),
+                    });
+                    start = absolute_pos + query.len();
+                }
             }
         }
 
@@ -150,7 +174,6 @@ impl Default for SearchState {
 mod tests {
     use super::*;
     use crate::buffer::{OutputKind, OutputLine};
-    use rstest::rstest;
 
     fn create_buffer_with_lines(lines: &[&str]) -> OutputBuffer {
         let mut buffer = OutputBuffer::new(100);
@@ -294,15 +317,130 @@ mod tests {
         assert!(!state.is_active());
     }
 
-    #[rstest]
-    #[case("Hello", 0)]
-    #[case("hello", 1)]
-    fn search_state_is_case_sensitive(#[case] query: &str, #[case] expected_line: usize) {
+    // Smartcase tests: lowercase query = case-insensitive, uppercase query = case-sensitive
+
+    #[test]
+    fn search_state_smartcase_lowercase_query_matches_both_cases() {
+        let buffer = create_buffer_with_lines(&["Hello World", "hello world", "HELLO WORLD"]);
+        let mut state = SearchState::new();
+
+        // Lowercase query should match all cases
+        state.search("hello", &buffer);
+        assert_eq!(state.match_count(), 3);
+        assert_eq!(state.matches()[0].line, 0);
+        assert_eq!(state.matches()[1].line, 1);
+        assert_eq!(state.matches()[2].line, 2);
+    }
+
+    #[test]
+    fn search_state_smartcase_uppercase_query_matches_exact_case() {
+        let buffer = create_buffer_with_lines(&["Hello World", "hello world", "HELLO WORLD"]);
+        let mut state = SearchState::new();
+
+        // Query with uppercase should be case-sensitive
+        state.search("Hello", &buffer);
+        assert_eq!(state.match_count(), 1);
+        assert_eq!(state.matches()[0].line, 0);
+    }
+
+    #[test]
+    fn search_state_smartcase_all_caps_query_matches_exact() {
+        let buffer = create_buffer_with_lines(&["Hello World", "hello world", "HELLO WORLD"]);
+        let mut state = SearchState::new();
+
+        state.search("HELLO", &buffer);
+        assert_eq!(state.match_count(), 1);
+        assert_eq!(state.matches()[0].line, 2);
+    }
+
+    #[test]
+    fn search_state_smartcase_preserves_match_positions() {
         let buffer = create_buffer_with_lines(&["Hello World", "hello world"]);
         let mut state = SearchState::new();
 
-        state.search(query, &buffer);
+        // Case-insensitive search should return correct positions in original text
+        state.search("world", &buffer);
+        assert_eq!(state.match_count(), 2);
+        // "World" at position 6 in "Hello World"
+        assert_eq!(state.matches()[0].start, 6);
+        assert_eq!(state.matches()[0].len, 5);
+        // "world" at position 6 in "hello world"
+        assert_eq!(state.matches()[1].start, 6);
+        assert_eq!(state.matches()[1].len, 5);
+    }
+
+    // Multibyte character tests (Japanese, etc.)
+
+    #[test]
+    fn search_state_finds_japanese_text() {
+        let buffer = create_buffer_with_lines(&["こんにちは世界", "さようなら世界", "hello world"]);
+        let mut state = SearchState::new();
+
+        state.search("世界", &buffer);
+        assert_eq!(state.match_count(), 2);
+        assert_eq!(state.matches()[0].line, 0);
+        assert_eq!(state.matches()[1].line, 1);
+    }
+
+    #[test]
+    fn search_state_japanese_match_has_correct_byte_positions() {
+        // "こんにちは" = 5 chars * 3 bytes = 15 bytes
+        // "世界" starts at byte 15
+        let buffer = create_buffer_with_lines(&["こんにちは世界"]);
+        let mut state = SearchState::new();
+
+        state.search("世界", &buffer);
         assert_eq!(state.match_count(), 1);
-        assert_eq!(state.matches()[0].line, expected_line);
+        assert_eq!(state.matches()[0].start, 15); // byte position
+        assert_eq!(state.matches()[0].len, 6); // "世界" = 2 chars * 3 bytes
+    }
+
+    #[test]
+    fn search_state_finds_japanese_in_mixed_text() {
+        let buffer =
+            create_buffer_with_lines(&["Error: エラーが発生しました", "Warning: 警告メッセージ"]);
+        let mut state = SearchState::new();
+
+        state.search("エラー", &buffer);
+        assert_eq!(state.match_count(), 1);
+        assert_eq!(state.matches()[0].line, 0);
+        // "Error: " = 7 bytes, then "エラー" starts
+        assert_eq!(state.matches()[0].start, 7);
+    }
+
+    #[test]
+    fn search_state_finds_multiple_japanese_matches_in_same_line() {
+        let buffer = create_buffer_with_lines(&["エラー: エラーが発生、エラーを確認"]);
+        let mut state = SearchState::new();
+
+        state.search("エラー", &buffer);
+        assert_eq!(state.match_count(), 3);
+        // First "エラー" at position 0
+        assert_eq!(state.matches()[0].start, 0);
+        // Second "エラー" at position 10 (": " = 2 bytes + "エラー" = 9 bytes = 11, but let's check)
+        // "エラー: " = 9 + 2 = 11 bytes, second "エラー" starts at 11
+        // Actually: "エラー" (9) + ": " (2) = 11
+    }
+
+    #[test]
+    fn search_state_japanese_with_ascii_query() {
+        let buffer = create_buffer_with_lines(&["日本語とEnglishの混合", "純粋な日本語テキスト"]);
+        let mut state = SearchState::new();
+
+        // Search for ASCII in mixed text
+        state.search("English", &buffer);
+        assert_eq!(state.match_count(), 1);
+        assert_eq!(state.matches()[0].line, 0);
+    }
+
+    #[test]
+    fn search_state_emoji_search() {
+        let buffer = create_buffer_with_lines(&["成功 ✓ 完了", "失敗 ✗ エラー", "✓ OK"]);
+        let mut state = SearchState::new();
+
+        state.search("✓", &buffer);
+        assert_eq!(state.match_count(), 2);
+        assert_eq!(state.matches()[0].line, 0);
+        assert_eq!(state.matches()[1].line, 2);
     }
 }
