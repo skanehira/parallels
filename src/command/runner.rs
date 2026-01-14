@@ -3,48 +3,7 @@ use tokio::process::{Child, Command};
 use tokio::sync::mpsc;
 
 use crate::buffer::{OutputKind, OutputLine};
-
-/// Output event from command
-#[derive(Debug)]
-pub enum CommandEvent {
-    /// Output line
-    Output(OutputLine),
-    /// Process exited
-    Exited { exit_code: i32 },
-    /// Error occurred
-    Error { message: String },
-}
-
-/// Handle for managing a running command
-pub struct CommandHandle {
-    /// Child process
-    child: Child,
-    /// Channel receiver for command events
-    receiver: mpsc::Receiver<CommandEvent>,
-}
-
-impl CommandHandle {
-    /// Kill the process with SIGKILL
-    pub async fn kill(&mut self) -> std::io::Result<()> {
-        self.child.kill().await
-    }
-
-    /// Wait for the process to exit and return the exit code
-    pub async fn wait(&mut self) -> std::io::Result<i32> {
-        let status = self.child.wait().await?;
-        Ok(status.code().unwrap_or(-1))
-    }
-
-    /// Receive the next event asynchronously
-    pub async fn next_event(&mut self) -> Option<CommandEvent> {
-        self.receiver.recv().await
-    }
-
-    /// Get the process ID
-    pub fn pid(&self) -> Option<u32> {
-        self.child.id()
-    }
-}
+use crate::event::AppEvent;
 
 /// Command execution manager
 pub struct CommandRunner;
@@ -54,7 +13,13 @@ impl CommandRunner {
     ///
     /// Executes the command using `sh -c "command"` format,
     /// capturing stdout/stderr asynchronously.
-    pub async fn spawn(command: &str) -> std::io::Result<CommandHandle> {
+    ///
+    /// Events are sent directly to the provided channel.
+    pub async fn spawn(
+        event_tx: mpsc::Sender<AppEvent>,
+        command: &str,
+        tab_index: usize,
+    ) -> std::io::Result<Child> {
         use std::process::Stdio;
 
         let mut child = Command::new("sh")
@@ -64,49 +29,43 @@ impl CommandRunner {
             .stderr(Stdio::piped())
             .spawn()?;
 
-        let (tx, rx) = mpsc::channel(1000);
-
         // Capture stdout
         if let Some(stdout) = child.stdout.take() {
-            let tx_stdout = tx.clone();
+            let tx = event_tx.clone();
             tokio::spawn(async move {
                 let reader = BufReader::new(stdout);
                 let mut lines = reader.lines();
                 while let Ok(Some(line)) = lines.next_line().await {
-                    let _ = tx_stdout
-                        .send(CommandEvent::Output(OutputLine::new(
-                            OutputKind::Stdout,
-                            line,
-                        )))
-                        .await;
+                    let event = AppEvent::Output {
+                        tab_index,
+                        line: OutputLine::new(OutputKind::Stdout, line),
+                    };
+                    if tx.send(event).await.is_err() {
+                        break;
+                    }
                 }
             });
         }
 
         // Capture stderr
         if let Some(stderr) = child.stderr.take() {
-            let tx_stderr = tx.clone();
+            let tx = event_tx.clone();
             tokio::spawn(async move {
                 let reader = BufReader::new(stderr);
                 let mut lines = reader.lines();
                 while let Ok(Some(line)) = lines.next_line().await {
-                    let _ = tx_stderr
-                        .send(CommandEvent::Output(OutputLine::new(
-                            OutputKind::Stderr,
-                            line,
-                        )))
-                        .await;
+                    let event = AppEvent::Output {
+                        tab_index,
+                        line: OutputLine::new(OutputKind::Stderr, line),
+                    };
+                    if tx.send(event).await.is_err() {
+                        break;
+                    }
                 }
             });
         }
 
-        // Drop the sender - channel will close when stdout/stderr tasks complete
-        drop(tx);
-
-        Ok(CommandHandle {
-            child,
-            receiver: rx,
-        })
+        Ok(child)
     }
 }
 
@@ -116,20 +75,22 @@ mod tests {
 
     #[tokio::test]
     async fn command_runner_spawn_returns_error_for_invalid_command() {
+        let (tx, _rx) = mpsc::channel(100);
         // sh -c will still succeed even with invalid command
         // but the command itself will fail
-        let result = CommandRunner::spawn("/nonexistent/command").await;
+        let result = CommandRunner::spawn(tx, "/nonexistent/command", 0).await;
         // spawn succeeds because sh exists
         assert!(result.is_ok());
     }
 
     #[tokio::test]
-    async fn command_handle_captures_stdout() {
-        let mut handle = CommandRunner::spawn("echo hello").await.unwrap();
+    async fn command_runner_captures_stdout() {
+        let (tx, mut rx) = mpsc::channel(100);
+        let _child = CommandRunner::spawn(tx, "echo hello", 0).await.unwrap();
 
         let mut found_hello = false;
-        while let Some(event) = handle.next_event().await {
-            let CommandEvent::Output(line) = event else {
+        while let Some(event) = rx.recv().await {
+            let AppEvent::Output { line, .. } = event else {
                 continue;
             };
             if line.kind == OutputKind::Stdout && line.content == "hello" {
@@ -141,12 +102,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn command_handle_captures_stderr() {
-        let mut handle = CommandRunner::spawn("echo error >&2").await.unwrap();
+    async fn command_runner_captures_stderr() {
+        let (tx, mut rx) = mpsc::channel(100);
+        let _child = CommandRunner::spawn(tx, "echo error >&2", 0).await.unwrap();
 
         let mut found_error = false;
-        while let Some(event) = handle.next_event().await {
-            let CommandEvent::Output(line) = event else {
+        while let Some(event) = rx.recv().await {
+            let AppEvent::Output { line, .. } = event else {
                 continue;
             };
             if line.kind == OutputKind::Stderr && line.content == "error" {
@@ -158,14 +120,15 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn command_handle_captures_multiple_lines() {
-        let mut handle = CommandRunner::spawn("echo line1; echo line2; echo line3")
+    async fn command_runner_captures_multiple_lines() {
+        let (tx, mut rx) = mpsc::channel(100);
+        let _child = CommandRunner::spawn(tx, "echo line1; echo line2; echo line3", 0)
             .await
             .unwrap();
 
         let mut lines = Vec::new();
-        while let Some(event) = handle.next_event().await {
-            let CommandEvent::Output(line) = event else {
+        while let Some(event) = rx.recv().await {
+            let AppEvent::Output { line, .. } = event else {
                 continue;
             };
             if line.kind == OutputKind::Stdout {
@@ -176,32 +139,36 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn command_handle_pid_returns_some() {
-        let handle = CommandRunner::spawn("sleep 0.1").await.unwrap();
-        assert!(handle.pid().is_some());
+    async fn command_runner_child_has_pid() {
+        let (tx, _rx) = mpsc::channel(100);
+        let child = CommandRunner::spawn(tx, "sleep 0.1", 0).await.unwrap();
+        assert!(child.id().is_some());
     }
 
     #[tokio::test]
-    async fn command_handle_kill_terminates_process() {
-        let mut handle = CommandRunner::spawn("sleep 10").await.unwrap();
-        let pid = handle.pid();
+    async fn command_runner_child_can_be_killed() {
+        let (tx, _rx) = mpsc::channel(100);
+        let mut child = CommandRunner::spawn(tx, "sleep 10", 0).await.unwrap();
+        let pid = child.id();
         assert!(pid.is_some());
 
-        let result = handle.kill().await;
+        let result = child.kill().await;
         assert!(result.is_ok());
     }
 
     #[tokio::test]
-    async fn command_handle_wait_returns_exit_code_success() {
-        let mut handle = CommandRunner::spawn("exit 0").await.unwrap();
-        let exit_code = handle.wait().await.unwrap();
-        assert_eq!(exit_code, 0);
+    async fn command_runner_child_wait_returns_exit_code_success() {
+        let (tx, _rx) = mpsc::channel(100);
+        let mut child = CommandRunner::spawn(tx, "exit 0", 0).await.unwrap();
+        let status = child.wait().await.unwrap();
+        assert_eq!(status.code(), Some(0));
     }
 
     #[tokio::test]
-    async fn command_handle_wait_returns_exit_code_failure() {
-        let mut handle = CommandRunner::spawn("exit 42").await.unwrap();
-        let exit_code = handle.wait().await.unwrap();
-        assert_eq!(exit_code, 42);
+    async fn command_runner_child_wait_returns_exit_code_failure() {
+        let (tx, _rx) = mpsc::channel(100);
+        let mut child = CommandRunner::spawn(tx, "exit 42", 0).await.unwrap();
+        let status = child.wait().await.unwrap();
+        assert_eq!(status.code(), Some(42));
     }
 }

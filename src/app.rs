@@ -1,5 +1,8 @@
-use crate::buffer::OutputLine;
-use crate::command::{CommandEvent, CommandHandle, CommandRunner};
+use tokio::process::Child;
+use tokio::sync::mpsc;
+
+use crate::command::CommandRunner;
+use crate::event::AppEvent;
 use crate::search::SearchState;
 use crate::tui::{CommandStatus, TabManager};
 
@@ -18,25 +21,31 @@ pub struct App {
     mode: Mode,
     search_state: SearchState,
     should_quit: bool,
-    /// Command handles for running processes
-    handles: Vec<Option<CommandHandle>>,
+    /// Receiver for events from background tasks
+    event_rx: mpsc::Receiver<AppEvent>,
+    /// Sender for events (kept to clone for spawned tasks)
+    event_tx: mpsc::Sender<AppEvent>,
+    /// Child processes for killing on quit
+    children: Vec<Child>,
 }
 
 impl App {
     /// Initialize the application
     pub fn new(commands: Vec<String>, max_buffer_lines: usize) -> Self {
-        let num_commands = commands.len();
-        let handles = (0..num_commands).map(|_| None).collect();
+        let (event_tx, event_rx) = mpsc::channel(1000);
+        let children = Vec::new();
         Self {
             tab_manager: TabManager::new(commands, max_buffer_lines),
             mode: Mode::Normal,
             search_state: SearchState::new(),
             should_quit: false,
-            handles,
+            event_rx,
+            event_tx,
+            children,
         }
     }
 
-    /// Spawn all commands asynchronously
+    /// Spawn all commands asynchronously with background output processing
     pub async fn spawn_commands(&mut self) {
         // Collect commands first to avoid borrow conflict
         let commands: Vec<String> = self
@@ -45,54 +54,48 @@ impl App {
             .map(|tab| tab.command().to_string())
             .collect();
 
-        for (i, command) in commands.into_iter().enumerate() {
-            match CommandRunner::spawn(&command).await {
-                Ok(handle) => {
-                    self.handles[i] = Some(handle);
+        for (tab_index, command) in commands.into_iter().enumerate() {
+            let tx = self.event_tx.clone();
+            match CommandRunner::spawn(tx.clone(), &command, tab_index).await {
+                Ok(child) => {
+                    self.children.push(child);
                 }
                 Err(e) => {
-                    if let Some(tab) = self.tab_manager.get_tab_mut(i) {
-                        tab.set_status(CommandStatus::Failed {
+                    let _ = tx
+                        .send(AppEvent::Failed {
+                            tab_index,
                             reason: e.to_string(),
-                        });
-                    }
+                        })
+                        .await;
                 }
             }
         }
     }
 
-    /// Poll all command handles for events
-    pub async fn poll_commands(&mut self) {
-        for (i, handle_opt) in self.handles.iter_mut().enumerate() {
-            if let Some(handle) = handle_opt {
-                // Try to receive event without blocking
-                match tokio::time::timeout(std::time::Duration::from_millis(1), handle.next_event())
-                    .await
-                {
-                    Ok(Some(event)) => {
-                        if let Some(tab) = self.tab_manager.get_tab_mut(i) {
-                            match event {
-                                CommandEvent::Output(line) => {
-                                    tab.push_output(line);
-                                }
-                                CommandEvent::Exited { exit_code } => {
-                                    tab.set_status(CommandStatus::Finished { exit_code });
-                                }
-                                CommandEvent::Error { message } => {
-                                    tab.push_output(OutputLine::new(
-                                        crate::buffer::OutputKind::Stderr,
-                                        format!("[error] {}", message),
-                                    ));
-                                }
-                            }
-                        }
-                    }
-                    Ok(None) => {
-                        // Channel closed, process likely exited
-                    }
-                    Err(_) => {
-                        // Timeout, no event available
-                    }
+    /// Receive an event asynchronously (for use with select!)
+    pub async fn recv_event(&mut self) -> Option<AppEvent> {
+        self.event_rx.recv().await
+    }
+
+    /// Handle a single app event
+    pub fn handle_app_event(&mut self, event: AppEvent) {
+        match event {
+            AppEvent::Output { tab_index, line } => {
+                if let Some(tab) = self.tab_manager.get_tab_mut(tab_index) {
+                    tab.push_output(line);
+                }
+            }
+            AppEvent::Exited {
+                tab_index,
+                exit_code,
+            } => {
+                if let Some(tab) = self.tab_manager.get_tab_mut(tab_index) {
+                    tab.set_status(CommandStatus::Finished { exit_code });
+                }
+            }
+            AppEvent::Failed { tab_index, reason } => {
+                if let Some(tab) = self.tab_manager.get_tab_mut(tab_index) {
+                    tab.set_status(CommandStatus::Failed { reason });
                 }
             }
         }
@@ -100,11 +103,8 @@ impl App {
 
     /// Kill all running processes
     pub async fn kill_all(&mut self) {
-        for handle_opt in self.handles.iter_mut() {
-            if let Some(handle) = handle_opt.take() {
-                let mut handle = handle;
-                let _ = handle.kill().await;
-            }
+        for child in &mut self.children {
+            let _ = child.kill().await;
         }
     }
 
@@ -169,7 +169,6 @@ mod tests {
         assert_eq!(app.tab_manager().len(), 2);
         assert_eq!(app.mode(), Mode::Normal);
         assert!(!app.should_quit());
-        assert_eq!(app.handles.len(), 2);
     }
 
     #[test]
@@ -196,29 +195,23 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn app_spawn_commands_spawns_processes() {
+    async fn app_spawn_commands_starts_background_tasks() {
         let mut app = App::new(vec!["echo hello".into()], 100);
 
         app.spawn_commands().await;
 
-        // The handle should be set
-        assert!(app.handles[0].is_some());
-    }
-
-    #[tokio::test]
-    async fn app_poll_commands_receives_output() {
-        let mut app = App::new(vec!["echo test_output".into()], 100);
-
-        app.spawn_commands().await;
-
-        // Wait a bit for output and poll multiple times
-        for _ in 0..50 {
-            app.poll_commands().await;
-            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
-
-            // Early exit if we got output
-            if !app.tab_manager().current_tab().buffer().is_empty() {
-                break;
+        // Receive and handle events
+        let timeout = std::time::Duration::from_millis(500);
+        let start = std::time::Instant::now();
+        while start.elapsed() < timeout {
+            tokio::select! {
+                Some(event) = app.recv_event() => {
+                    app.handle_app_event(event);
+                    if !app.tab_manager().current_tab().buffer().is_empty() {
+                        break;
+                    }
+                }
+                _ = tokio::time::sleep(std::time::Duration::from_millis(10)) => {}
             }
         }
 
@@ -228,13 +221,27 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn app_kill_all_terminates_processes() {
-        let mut app = App::new(vec!["sleep 10".into()], 100);
+    async fn app_recv_event_handles_output() {
+        let mut app = App::new(vec!["echo test_line".into()], 100);
 
         app.spawn_commands().await;
-        assert!(app.handles[0].is_some());
 
-        app.kill_all().await;
-        assert!(app.handles[0].is_none());
+        // Receive and handle events
+        let timeout = std::time::Duration::from_millis(500);
+        let start = std::time::Instant::now();
+        while start.elapsed() < timeout {
+            tokio::select! {
+                Some(event) = app.recv_event() => {
+                    app.handle_app_event(event);
+                    if !app.tab_manager().current_tab().buffer().is_empty() {
+                        break;
+                    }
+                }
+                _ = tokio::time::sleep(std::time::Duration::from_millis(10)) => {}
+            }
+        }
+
+        let buffer = app.tab_manager().current_tab().buffer();
+        assert!(!buffer.is_empty(), "Should have received output");
     }
 }

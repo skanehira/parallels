@@ -3,11 +3,13 @@ use std::time::Duration;
 
 use clap::Parser;
 use crossterm::{
-    event::{self, Event, KeyEventKind},
+    event::{Event, EventStream, KeyEventKind},
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
+use futures::StreamExt;
 use ratatui::{Terminal, backend::CrosstermBackend};
+use tokio::time::interval;
 
 use cargo_parallels::app::App;
 use cargo_parallels::tui::{Renderer, handle_key};
@@ -15,12 +17,12 @@ use cargo_parallels::tui::{Renderer, handle_key};
 /// Default maximum buffer lines per command
 const DEFAULT_MAX_BUFFER_LINES: usize = 10000;
 
-/// Poll interval for command output (milliseconds)
-const POLL_INTERVAL_MS: u64 = 10;
+/// Render interval (milliseconds)
+const RENDER_INTERVAL_MS: u64 = 16; // ~60fps
 
 #[derive(Parser, Debug)]
 #[command(
-    name = "cargo-p",
+    name = "parallels",
     author,
     version,
     about = "Run multiple commands in parallel with TUI",
@@ -57,36 +59,41 @@ async fn run_app(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     mut app: App,
 ) -> io::Result<()> {
-    // Spawn all commands
+    // Spawn all commands (starts background tasks)
     app.spawn_commands().await;
+
+    let mut event_stream = EventStream::new();
+    let mut render_interval = interval(Duration::from_millis(RENDER_INTERVAL_MS));
 
     loop {
         // Update visible lines based on terminal size
         let size = terminal.size()?;
-        let visible_lines = size.height.saturating_sub(5) as usize; // Account for borders and status bar
+        let visible_lines = size.height.saturating_sub(5) as usize;
         app.tab_manager_mut()
             .current_tab_mut()
             .set_visible_lines(visible_lines);
 
-        // Render
-        terminal.draw(|frame| {
-            Renderer::render(frame, &app);
-        })?;
-
-        // Poll for command output
-        app.poll_commands().await;
-
-        // Handle key events
-        if event::poll(Duration::from_millis(POLL_INTERVAL_MS))?
-            && let Event::Key(key) = event::read()?
-            && key.kind == KeyEventKind::Press
-        {
-            handle_key(&mut app, key);
+        tokio::select! {
+            // Handle app events from background command tasks
+            Some(event) = app.recv_event() => {
+                app.handle_app_event(event);
+            }
+            // Handle key events
+            Some(Ok(Event::Key(key))) = event_stream.next() => {
+                if key.kind == KeyEventKind::Press {
+                    handle_key(&mut app, key);
+                }
+            }
+            // Render at fixed interval
+            _ = render_interval.tick() => {
+                terminal.draw(|frame| {
+                    Renderer::render(frame, &app);
+                })?;
+            }
         }
 
         // Check if we should quit
         if app.should_quit() {
-            app.kill_all().await;
             break;
         }
     }
