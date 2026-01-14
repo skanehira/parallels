@@ -234,8 +234,8 @@ impl Renderer {
         };
 
         let style = match mode {
-            Mode::Normal => Style::default().bg(Color::Blue).fg(Color::White),
-            Mode::Search => Style::default().bg(Color::Magenta).fg(Color::White),
+            Mode::Normal => Style::default().fg(Color::Blue),
+            Mode::Search => Style::default().fg(Color::Magenta),
         };
 
         let paragraph = Paragraph::new(content).style(style);

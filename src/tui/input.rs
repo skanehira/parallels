@@ -46,10 +46,28 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) {
         // Enter search mode
         KeyCode::Char('/') => {
             app.set_mode(Mode::Search);
+            // Clear previous search query
+            app.search_state_mut().clear();
             // Disable auto-scroll when entering search mode
             app.tab_manager_mut()
                 .current_tab_mut()
                 .set_auto_scroll(false);
+        }
+
+        // Navigate search matches (only when search is active)
+        KeyCode::Char('n') => {
+            if app.search_state().is_active() {
+                if let Some(line) = app.search_state_mut().next_match() {
+                    app.tab_manager_mut().current_tab_mut().scroll_to_line(line);
+                }
+            }
+        }
+        KeyCode::Char('N') => {
+            if app.search_state().is_active() {
+                if let Some(line) = app.search_state_mut().prev_match() {
+                    app.tab_manager_mut().current_tab_mut().scroll_to_line(line);
+                }
+            }
         }
 
         _ => {}
@@ -64,16 +82,9 @@ fn handle_search_mode(app: &mut App, key: KeyEvent) {
             app.set_mode(Mode::Normal);
         }
 
-        // Navigate matches
-        KeyCode::Char('n') => {
-            if let Some(line) = app.search_state_mut().next_match() {
-                app.tab_manager_mut().current_tab_mut().scroll_to_line(line);
-            }
-        }
-        KeyCode::Char('N') => {
-            if let Some(line) = app.search_state_mut().prev_match() {
-                app.tab_manager_mut().current_tab_mut().scroll_to_line(line);
-            }
+        // Confirm search and return to normal mode
+        KeyCode::Enter => {
+            app.set_mode(Mode::Normal);
         }
 
         // Delete character from query
@@ -83,7 +94,7 @@ fn handle_search_mode(app: &mut App, key: KeyEvent) {
             app.search_in_current_tab(&query);
         }
 
-        // Add character to query
+        // Add character to query (including n/N)
         KeyCode::Char(c) => {
             let mut query = app.search_state().query().to_string();
             query.push(c);
@@ -234,6 +245,20 @@ mod tests {
         assert!(!app.tab_manager().current_tab().auto_scroll());
     }
 
+    #[test]
+    fn input_normal_mode_slash_clears_search_query() {
+        let mut app = create_app_with_output();
+        // Set up a previous search
+        app.search_in_current_tab("line1");
+        assert_eq!(app.search_state().query(), "line1");
+
+        // Enter search mode
+        handle_key(&mut app, key(KeyCode::Char('/')));
+
+        // Query should be cleared
+        assert_eq!(app.search_state().query(), "");
+    }
+
     // Search mode tests
 
     #[test]
@@ -271,13 +296,43 @@ mod tests {
     }
 
     #[test]
-    fn input_search_mode_n_moves_to_next_match() {
+    fn input_search_mode_n_adds_to_query() {
+        let mut app = App::new(vec!["cmd".into()], 100);
+        app.set_mode(Mode::Search);
+
+        handle_key(&mut app, key(KeyCode::Char('n')));
+
+        // n should be added to query, not trigger match navigation
+        assert_eq!(app.search_state().query(), "n");
+    }
+
+    #[test]
+    fn input_search_mode_upper_n_adds_to_query() {
+        let mut app = App::new(vec!["cmd".into()], 100);
+        app.set_mode(Mode::Search);
+
+        handle_key(&mut app, key(KeyCode::Char('N')));
+
+        // N should be added to query, not trigger match navigation
+        assert_eq!(app.search_state().query(), "N");
+    }
+
+    #[test]
+    fn input_search_mode_enter_returns_to_normal() {
+        let mut app = App::new(vec!["cmd".into()], 100);
+        app.set_mode(Mode::Search);
+
+        handle_key(&mut app, key(KeyCode::Enter));
+
+        assert_eq!(app.mode(), Mode::Normal);
+    }
+
+    #[test]
+    fn input_normal_mode_n_moves_to_next_match_when_search_active() {
         let mut app = create_app_with_output();
         // Search for "line1" which appears in lines 1, 10, 11, etc.
         app.search_in_current_tab("line1");
-        app.set_mode(Mode::Search);
 
-        // First match is at line 1, next should go to line 10, 11, etc.
         let initial_match = app.search_state().current_match_display();
 
         handle_key(&mut app, key(KeyCode::Char('n')));
@@ -288,14 +343,27 @@ mod tests {
     }
 
     #[test]
-    fn input_search_mode_upper_n_moves_to_prev_match() {
+    fn input_normal_mode_upper_n_moves_to_prev_match_when_search_active() {
         let mut app = create_app_with_output();
         app.search_in_current_tab("line1");
-        app.set_mode(Mode::Search);
 
         handle_key(&mut app, key(KeyCode::Char('N')));
 
         // Should wrap to last match
         assert!(app.search_state().current_match_display().is_some());
+    }
+
+    #[test]
+    fn input_normal_mode_n_does_nothing_when_no_search() {
+        let mut app = create_app_with_output();
+        let initial_offset = app.tab_manager().current_tab().scroll_offset();
+
+        handle_key(&mut app, key(KeyCode::Char('n')));
+
+        // Should not change anything
+        assert_eq!(
+            app.tab_manager().current_tab().scroll_offset(),
+            initial_offset
+        );
     }
 }
