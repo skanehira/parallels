@@ -162,22 +162,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b35204fbdc0b3f4446b89fc1ac2cf84a8a68971995d0bf2e925ec7cd960f9cb3"
 
 [[package]]
-name = "cargo-parallels"
-version = "0.0.1"
-dependencies = [
- "ansi-to-tui",
- "clap",
- "crossterm",
- "futures",
- "insta",
- "ratatui",
- "rstest",
- "thiserror 2.0.17",
- "tokio",
- "tui-input",
-]
-
-[[package]]
 name = "castaway"
 version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -953,6 +937,22 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7bb71e1b3fa6ca1c61f383464aaf2bb0e2f8e772a1f01d486832464de363b951"
 dependencies = [
  "num-traits",
+]
+
+[[package]]
+name = "parallels"
+version = "0.0.1"
+dependencies = [
+ "ansi-to-tui",
+ "clap",
+ "crossterm",
+ "futures",
+ "insta",
+ "ratatui",
+ "rstest",
+ "thiserror 2.0.17",
+ "tokio",
+ "tui-input",
 ]
 
 [[package]]

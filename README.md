@@ -1,14 +1,14 @@
-![GitHub Repo stars](https://img.shields.io/github/stars/skanehira/cargo-parallels?style=social)
-![GitHub](https://img.shields.io/github/license/skanehira/cargo-parallels)
-![GitHub all releases](https://img.shields.io/github/downloads/skanehira/cargo-parallels/total)
-![GitHub CI Status](https://img.shields.io/github/actions/workflow/status/skanehira/cargo-parallels/ci.yaml?branch=main)
-![GitHub Release Status](https://img.shields.io/github/v/release/skanehira/cargo-parallels)
+![GitHub Repo stars](https://img.shields.io/github/stars/skanehira/parallels?style=social)
+![GitHub](https://img.shields.io/github/license/skanehira/parallels)
+![GitHub all releases](https://img.shields.io/github/downloads/skanehira/parallels/total)
+![GitHub CI Status](https://img.shields.io/github/actions/workflow/status/skanehira/parallels/ci.yaml?branch=main)
+![GitHub Release Status](https://img.shields.io/github/v/release/skanehira/parallels)
 
-# cargo-parallels
+# parallels
 
 A TUI tool to run multiple commands in parallel and view their output in real-time.
 
-![](https://i.gyazo.com/1318e9e6780b3247057936e0b05ebe6e.png)
+![](https://i.gyazo.com/12b2954fd374467a034458cfd10e4e91.png)
 
 ## Features
 
@@ -22,7 +22,7 @@ A TUI tool to run multiple commands in parallel and view their output in real-ti
 ## Installation
 
 ```bash
-cargo install cargo-parallels
+cargo install parallels
 ```
 
 ## Usage
@@ -47,7 +47,7 @@ parallels -b 5000 "command1" "command2"
 
 | Key                 | Action                                             |
 | ------------------- | -------------------------------------------------- |
-| `q`                 | Quit                                               |
+| `Ctrl+C`            | Quit                                               |
 | `h` / `l`           | Switch to previous/next tab                        |
 | `j` / `k`           | Scroll down/up                                     |
 | `Ctrl+d` / `Ctrl+u` | Scroll half page down/up                           |

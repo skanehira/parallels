@@ -1,5 +1,5 @@
 [package]
-name = "cargo-parallels"
+name = "parallels"
 version = "0.0.1"
 authors = ["skanehira"]
 edition = "2024"

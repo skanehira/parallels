@@ -11,8 +11,8 @@ use futures::StreamExt;
 use ratatui::{Terminal, backend::CrosstermBackend};
 use tokio::time::interval;
 
-use cargo_parallels::app::App;
-use cargo_parallels::tui::{Renderer, handle_key};
+use parallels::app::App;
+use parallels::tui::{Renderer, handle_key};
 
 /// Default maximum buffer lines per command
 const DEFAULT_MAX_BUFFER_LINES: usize = 10000;

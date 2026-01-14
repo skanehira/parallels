@@ -1,10 +1,10 @@
 # Architecture
 
-This document describes the architecture of `cargo-parallels` for contributors.
+This document describes the architecture of `parallels` for contributors.
 
 ## Overview
 
-`cargo-parallels` is a TUI application that runs multiple shell commands in parallel and displays their output in a tabbed interface. It uses:
+`parallels` is a TUI application that runs multiple shell commands in parallel and displays their output in a tabbed interface. It uses:
 
 - **tokio** for async runtime and process management
 - **ratatui** + **crossterm** for terminal UI
