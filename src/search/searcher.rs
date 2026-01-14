@@ -47,7 +47,8 @@ impl SearchState {
         }
 
         for (line_idx, line) in buffer.iter().enumerate() {
-            let content = &line.content;
+            // Use pre-stripped content for searching
+            let content = line.plain();
             let mut start = 0;
             while let Some(pos) = content[start..].find(query) {
                 let absolute_pos = start + pos;

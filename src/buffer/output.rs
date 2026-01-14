@@ -1,5 +1,8 @@
 use std::collections::VecDeque;
 
+use ansi_to_tui::IntoText;
+use ratatui::text::Span;
+
 /// Output type enumeration
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OutputKind {
@@ -12,23 +15,37 @@ pub enum OutputKind {
 pub struct OutputLine {
     /// Output type
     pub kind: OutputKind,
-    /// Content (may contain ANSI escape sequences)
-    pub content: String,
+    /// Pre-parsed spans with styles (for rendering)
+    spans: Vec<Span<'static>>,
 }
 
 impl OutputLine {
     /// Create a new OutputLine
+    ///
+    /// Parses ANSI escape sequences into styled spans.
     pub fn new(kind: OutputKind, content: String) -> Self {
-        Self { kind, content }
+        // Parse ANSI codes into styled spans
+        let spans = match content.as_str().into_text() {
+            Ok(text) => text
+                .lines
+                .into_iter()
+                .next()
+                .map(|line| line.spans)
+                .unwrap_or_else(Vec::new),
+            Err(_) => vec![Span::raw(content)],
+        };
+
+        Self { kind, spans }
     }
 
-    /// Return a string with display prefix
-    pub fn with_prefix(&self) -> String {
-        let prefix = match self.kind {
-            OutputKind::Stdout => "[stdout]",
-            OutputKind::Stderr => "[stderr]",
-        };
-        format!("{} {}", prefix, self.content)
+    /// Return pre-parsed spans for rendering
+    pub fn spans(&self) -> &[Span<'static>] {
+        &self.spans
+    }
+
+    /// Return plain text without ANSI escape sequences (derived from spans)
+    pub fn plain(&self) -> String {
+        self.spans.iter().map(|s| s.content.as_ref()).collect()
     }
 }
 
@@ -94,7 +111,6 @@ impl OutputBuffer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rstest::rstest;
 
     #[test]
     fn output_buffer_push_adds_line_to_buffer() {
@@ -115,9 +131,9 @@ mod tests {
 
         assert_eq!(buffer.len(), 3);
         let lines = buffer.get_range(0, 3);
-        assert_eq!(lines[0].content, "line2");
-        assert_eq!(lines[1].content, "line3");
-        assert_eq!(lines[2].content, "line4");
+        assert_eq!(lines[0].plain(), "line2");
+        assert_eq!(lines[1].plain(), "line3");
+        assert_eq!(lines[2].plain(), "line4");
     }
 
     #[test]
@@ -139,10 +155,10 @@ mod tests {
 
         let lines = buffer.get_range(3, 4);
         assert_eq!(lines.len(), 4);
-        assert_eq!(lines[0].content, "line3");
-        assert_eq!(lines[1].content, "line4");
-        assert_eq!(lines[2].content, "line5");
-        assert_eq!(lines[3].content, "line6");
+        assert_eq!(lines[0].plain(), "line3");
+        assert_eq!(lines[1].plain(), "line4");
+        assert_eq!(lines[2].plain(), "line5");
+        assert_eq!(lines[3].plain(), "line6");
     }
 
     #[test]
@@ -154,8 +170,8 @@ mod tests {
 
         let lines = buffer.get_range(3, 10);
         assert_eq!(lines.len(), 2);
-        assert_eq!(lines[0].content, "line3");
-        assert_eq!(lines[1].content, "line4");
+        assert_eq!(lines[0].plain(), "line3");
+        assert_eq!(lines[1].plain(), "line4");
     }
 
     #[test]
@@ -176,19 +192,51 @@ mod tests {
         buffer.push(OutputLine::new(OutputKind::Stderr, "line2".into()));
         buffer.push(OutputLine::new(OutputKind::Stdout, "line3".into()));
 
-        let contents: Vec<_> = buffer.iter().map(|l| l.content.as_str()).collect();
+        let contents: Vec<_> = buffer.iter().map(|l| l.plain()).collect();
         assert_eq!(contents, vec!["line1", "line2", "line3"]);
     }
 
-    #[rstest]
-    #[case(OutputKind::Stdout, "hello", "[stdout] hello")]
-    #[case(OutputKind::Stderr, "error", "[stderr] error")]
-    fn output_line_with_prefix_returns_correct_prefix(
-        #[case] kind: OutputKind,
-        #[case] content: &str,
-        #[case] expected: &str,
-    ) {
-        let line = OutputLine::new(kind, content.into());
-        assert_eq!(line.with_prefix(), expected);
+    #[test]
+    fn output_line_spans_contains_parsed_ansi_styles() {
+        use ratatui::style::Color;
+
+        let line = OutputLine::new(OutputKind::Stdout, "\x1b[31mERROR\x1b[0m: timeout".into());
+        let spans = line.spans();
+
+        // Should have at least one span with red color
+        assert!(!spans.is_empty());
+
+        // First span should be "ERROR" with red foreground
+        assert_eq!(spans[0].content, "ERROR");
+        assert_eq!(spans[0].style.fg, Some(Color::Red));
+    }
+
+    #[test]
+    fn output_line_spans_handles_plain_text() {
+        let line = OutputLine::new(OutputKind::Stdout, "hello world".into());
+        let spans = line.spans();
+
+        assert_eq!(spans.len(), 1);
+        assert_eq!(spans[0].content, "hello world");
+    }
+
+    #[test]
+    fn output_line_spans_handles_multiple_colors() {
+        use ratatui::style::Color;
+
+        let line = OutputLine::new(
+            OutputKind::Stdout,
+            "\x1b[32mOK\x1b[0m \x1b[31mERROR\x1b[0m".into(),
+        );
+        let spans = line.spans();
+
+        // Find spans with colors
+        let green_span = spans.iter().find(|s| s.style.fg == Some(Color::Green));
+        let red_span = spans.iter().find(|s| s.style.fg == Some(Color::Red));
+
+        assert!(green_span.is_some(), "Should have green span");
+        assert!(red_span.is_some(), "Should have red span");
+        assert_eq!(green_span.unwrap().content, "OK");
+        assert_eq!(red_span.unwrap().content, "ERROR");
     }
 }

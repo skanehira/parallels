@@ -93,7 +93,7 @@ mod tests {
             let AppEvent::Output { line, .. } = event else {
                 continue;
             };
-            if line.kind == OutputKind::Stdout && line.content == "hello" {
+            if line.kind == OutputKind::Stdout && line.plain() == "hello" {
                 found_hello = true;
                 break;
             }
@@ -111,7 +111,7 @@ mod tests {
             let AppEvent::Output { line, .. } = event else {
                 continue;
             };
-            if line.kind == OutputKind::Stderr && line.content == "error" {
+            if line.kind == OutputKind::Stderr && line.plain() == "error" {
                 found_error = true;
                 break;
             }
@@ -132,7 +132,7 @@ mod tests {
                 continue;
             };
             if line.kind == OutputKind::Stdout {
-                lines.push(line.content);
+                lines.push(line.plain());
             }
         }
         assert_eq!(lines, vec!["line1", "line2", "line3"]);

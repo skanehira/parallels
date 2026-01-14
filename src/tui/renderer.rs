@@ -1,13 +1,88 @@
 use ratatui::{
-    Frame,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph, Tabs, Wrap},
+    Frame,
 };
 
 use crate::app::{App, Mode};
 use crate::buffer::OutputKind;
+
+/// A highlight range in original text positions
+struct HighlightRange {
+    start: usize,
+    end: usize,
+    is_current: bool,
+}
+
+/// Overlay search highlights on ANSI-parsed spans
+///
+/// Takes spans from ansi-to-tui and applies highlight styles to matching ranges.
+fn overlay_highlights(
+    spans: Vec<Span<'static>>,
+    highlights: &[HighlightRange],
+) -> Vec<Span<'static>> {
+    if highlights.is_empty() {
+        return spans;
+    }
+
+    let mut result = Vec::new();
+    let mut pos = 0;
+
+    for span in spans {
+        let span_start = pos;
+        let span_end = pos + span.content.len();
+        let span_text = span.content.to_string();
+        let base_style = span.style;
+
+        // Find highlights that overlap with this span
+        let overlapping: Vec<_> = highlights
+            .iter()
+            .filter(|h| h.start < span_end && h.end > span_start)
+            .collect();
+
+        if overlapping.is_empty() {
+            // No highlights - keep span as-is
+            result.push(Span::styled(span_text, base_style));
+        } else {
+            // Split span at highlight boundaries
+            let mut current_pos = span_start;
+
+            for highlight in overlapping {
+                let hl_start = highlight.start.max(span_start);
+                let hl_end = highlight.end.min(span_end);
+
+                // Part before highlight
+                if current_pos < hl_start {
+                    let text = &span_text[current_pos - span_start..hl_start - span_start];
+                    result.push(Span::styled(text.to_string(), base_style));
+                }
+
+                // Highlighted part - apply highlight style while preserving fg color
+                let text = &span_text[hl_start - span_start..hl_end - span_start];
+                let highlight_style = if highlight.is_current {
+                    Style::default().fg(Color::Black).bg(Color::Cyan)
+                } else {
+                    Style::default().fg(Color::White).bg(Color::DarkGray)
+                };
+                result.push(Span::styled(text.to_string(), highlight_style));
+
+                current_pos = hl_end;
+            }
+
+            // Part after all highlights
+            if current_pos < span_end {
+                let text = &span_text[current_pos - span_start..];
+                result.push(Span::styled(text.to_string(), base_style));
+            }
+        }
+
+        pos = span_end;
+    }
+
+    result
+}
 
 /// TUI rendering handler
 pub struct Renderer;
@@ -79,13 +154,14 @@ impl Renderer {
                     OutputKind::Stderr => Style::default().fg(Color::Red),
                 };
 
-                let content = &output_line.content;
+                let prefix_span = Span::styled(prefix, prefix_style);
 
-                // Build spans for this line
-                let mut spans = vec![Span::styled(prefix, prefix_style)];
+                // Use pre-parsed spans from OutputLine
+                let base_spans: Vec<Span<'static>> = output_line.spans().to_vec();
 
                 // Check for search highlights
-                if !search_state.query().is_empty() {
+                let final_spans = if !search_state.query().is_empty() {
+                    // Search active - overlay highlights on ANSI-parsed spans
                     let matches: Vec<_> = search_state
                         .matches()
                         .iter()
@@ -93,34 +169,28 @@ impl Renderer {
                         .collect();
 
                     if matches.is_empty() {
-                        spans.push(Span::raw(content.as_str()));
+                        base_spans
                     } else {
-                        let mut last_end = 0;
-                        for m in matches {
-                            if m.start > last_end {
-                                spans.push(Span::raw(&content[last_end..m.start]));
-                            }
-                            let is_current = current_match_line == Some(line_idx);
-                            let highlight_style = if is_current {
-                                Style::default()
-                                    .bg(Color::Yellow)
-                                    .fg(Color::Black)
-                                    .add_modifier(Modifier::BOLD)
-                            } else {
-                                Style::default().bg(Color::DarkGray).fg(Color::White)
-                            };
-                            let end = m.start + m.len;
-                            spans.push(Span::styled(&content[m.start..end], highlight_style));
-                            last_end = end;
-                        }
-                        if last_end < content.len() {
-                            spans.push(Span::raw(&content[last_end..]));
-                        }
+                        // Search positions are in stripped text coordinates
+                        // ansi-to-tui spans are also in stripped text coordinates
+                        // So we use the positions directly without conversion
+                        let highlights: Vec<HighlightRange> = matches
+                            .iter()
+                            .map(|m| HighlightRange {
+                                start: m.start,
+                                end: m.start + m.len,
+                                is_current: current_match_line == Some(line_idx),
+                            })
+                            .collect();
+
+                        overlay_highlights(base_spans, &highlights)
                     }
                 } else {
-                    spans.push(Span::raw(content.as_str()));
-                }
+                    base_spans
+                };
 
+                let mut spans = vec![prefix_span];
+                spans.extend(final_spans);
                 Line::from(spans)
             })
             .collect();
@@ -177,7 +247,8 @@ impl Renderer {
 mod tests {
     use super::*;
     use crate::buffer::{OutputKind, OutputLine};
-    use ratatui::{Terminal, backend::TestBackend};
+    use ansi_to_tui::IntoText;
+    use ratatui::{backend::TestBackend, Terminal};
 
     /// Convert terminal buffer to string for snapshot testing
     fn buffer_to_string(terminal: &Terminal<TestBackend>) -> String {
@@ -336,5 +407,123 @@ mod tests {
             .unwrap();
 
         insta::assert_snapshot!(buffer_to_string(&terminal));
+    }
+
+    // Tests for overlay_highlights function
+    #[test]
+    fn overlay_highlights_with_no_highlights_returns_original_spans() {
+        let spans = vec![Span::raw("hello world".to_string())];
+        let result = overlay_highlights(spans.clone(), &[]);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].content, "hello world");
+    }
+
+    #[test]
+    fn overlay_highlights_highlights_middle_of_span() {
+        let spans = vec![Span::raw("hello world".to_string())];
+        let highlights = vec![HighlightRange {
+            start: 6,
+            end: 11,
+            is_current: true,
+        }];
+        let result = overlay_highlights(spans, &highlights);
+
+        // Should split into: "hello " + "world" (highlighted)
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].content, "hello ");
+        assert_eq!(result[1].content, "world");
+        assert_eq!(result[1].style.bg, Some(Color::Cyan));
+    }
+
+    #[test]
+    fn overlay_highlights_with_ansi_text_highlights_correctly() {
+        // Simulate what ansi-to-tui produces for "\x1b[31mERROR\x1b[0m: timeout"
+        // ansi-to-tui strips ANSI codes, so spans contain only visible text
+        let spans = vec![
+            Span::styled("ERROR".to_string(), Style::default().fg(Color::Red)),
+            Span::raw(": timeout".to_string()),
+        ];
+
+        // Search for "ERROR" - positions are in STRIPPED text (0-5)
+        let highlights = vec![HighlightRange {
+            start: 0,
+            end: 5,
+            is_current: true,
+        }];
+
+        let result = overlay_highlights(spans, &highlights);
+
+        // "ERROR" should be highlighted
+        assert_eq!(result[0].content, "ERROR");
+        assert_eq!(result[0].style.bg, Some(Color::Cyan));
+        // ": timeout" should remain unchanged
+        assert_eq!(result[1].content, ": timeout");
+        assert_eq!(result[1].style.bg, None);
+    }
+
+    #[test]
+    fn overlay_highlights_search_error_in_ansi_colored_text() {
+        // Real case: "\x1b[31m✗ ERROR: Connection timeout\x1b[0m"
+        // ansi-to-tui produces: one span with "✗ ERROR: Connection timeout" in red
+        let spans = vec![Span::styled(
+            "✗ ERROR: Connection timeout".to_string(),
+            Style::default().fg(Color::Red),
+        )];
+
+        // Search for "ERROR" - in stripped text it's at position 2-7
+        // "✗ " is 4 bytes (✗ is 3 bytes + space), "ERROR" starts at byte 4
+        let text = "✗ ERROR: Connection timeout";
+        let error_start = text.find("ERROR").unwrap();
+        let error_end = error_start + "ERROR".len();
+
+        let highlights = vec![HighlightRange {
+            start: error_start,
+            end: error_end,
+            is_current: true,
+        }];
+
+        let result = overlay_highlights(spans, &highlights);
+
+        // Should have 3 spans: "✗ " + "ERROR" (highlighted) + ": Connection timeout"
+        assert_eq!(result.len(), 3, "Expected 3 spans, got {:?}", result);
+        assert_eq!(result[0].content, "✗ ");
+        assert_eq!(result[1].content, "ERROR");
+        assert_eq!(result[1].style.bg, Some(Color::Cyan));
+        assert_eq!(result[2].content, ": Connection timeout");
+    }
+
+    #[test]
+    fn renderer_search_with_ansi_text_highlights_correct_position() {
+        // Test the full flow: ANSI text + search
+        let raw_content = "\x1b[31m✗ ERROR: Connection timeout\x1b[0m";
+
+        // 1. Parse ANSI (what ansi-to-tui does)
+        let ansi_text = raw_content.into_text().unwrap();
+        let base_spans: Vec<Span<'static>> = ansi_text.lines.into_iter().next().unwrap().spans;
+
+        // 2. Derive stripped text from spans (same as OutputLine::stripped())
+        let stripped: String = base_spans.iter().map(|s| s.content.to_string()).collect();
+        assert_eq!(stripped, "✗ ERROR: Connection timeout");
+
+        // Search for "ERROR" in stripped text
+        let search_start = stripped.find("ERROR").unwrap();
+        let search_end = search_start + "ERROR".len();
+
+        // 3. Apply highlights using stripped positions directly
+        let highlights = vec![HighlightRange {
+            start: search_start,
+            end: search_end,
+            is_current: true,
+        }];
+        let result = overlay_highlights(base_spans, &highlights);
+
+        // Verify "ERROR" is highlighted
+        let highlighted_text: String = result
+            .iter()
+            .filter(|s| s.style.bg == Some(Color::Cyan))
+            .map(|s| s.content.to_string())
+            .collect();
+
+        assert_eq!(highlighted_text, "ERROR");
     }
 }
