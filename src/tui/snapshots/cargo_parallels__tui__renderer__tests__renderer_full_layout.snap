@@ -1,6 +1,6 @@
 ---
 source: src/tui/renderer.rs
-assertion_line: 338
+assertion_line: 414
 expression: buffer_to_string(&terminal)
 ---
 ┌Commands──────────────────────────────────────────────────┐
@@ -17,4 +17,4 @@ expression: buffer_to_string(&terminal)
 │                                                          │
 │                                                          │
 └──────────────────────────────────────────────────────────┘
- SEARCH: Done (1/1) | n/N:next/prev Esc:cancel
+ SEARCH: Done (1/1) | Enter:confirm Esc:cancel

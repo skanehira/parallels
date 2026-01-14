@@ -47,8 +47,6 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) {
         // Enter search mode
         KeyCode::Char('/') => {
             app.set_mode(Mode::Search);
-            // Clear previous search query
-            app.search_state_mut().clear();
             // Disable auto-scroll when entering search mode
             app.tab_manager_mut()
                 .current_tab_mut()
@@ -240,7 +238,7 @@ mod tests {
     }
 
     #[test]
-    fn input_normal_mode_slash_clears_search_query() {
+    fn input_normal_mode_slash_preserves_search_query() {
         let mut app = create_app_with_output();
         // Set up a previous search
         app.search_in_current_tab("line1");
@@ -249,8 +247,8 @@ mod tests {
         // Enter search mode
         handle_key(&mut app, key(KeyCode::Char('/')));
 
-        // Query should be cleared
-        assert_eq!(app.search_state().query(), "");
+        // Query should be preserved
+        assert_eq!(app.search_state().query(), "line1");
     }
 
     // Search mode tests

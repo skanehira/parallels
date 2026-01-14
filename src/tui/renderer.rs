@@ -1,9 +1,9 @@
 use ratatui::{
-    Frame,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph, Tabs, Wrap},
+    Frame,
 };
 
 use crate::app::{App, Mode};
@@ -211,9 +211,14 @@ impl Renderer {
         let content = match mode {
             Mode::Normal => {
                 let auto_scroll = if tab.auto_scroll() { "ON" } else { "OFF" };
+                let search_hint = if search_state.is_active() {
+                    " n/N:match"
+                } else {
+                    ""
+                };
                 format!(
-                    " NORMAL | Auto-scroll: {} | h/l:tabs j/k:scroll /:search q:quit",
-                    auto_scroll
+                    " NORMAL | Auto-scroll: {} | h/l:tabs j/k:scroll /:search{} q:quit",
+                    auto_scroll, search_hint
                 )
             }
             Mode::Search => {
@@ -227,7 +232,7 @@ impl Renderer {
                     String::new()
                 };
                 format!(
-                    " SEARCH: {}{} | n/N:next/prev Esc:cancel",
+                    " SEARCH: {}{} | Enter:confirm Esc:cancel",
                     query, match_info
                 )
             }
@@ -248,7 +253,7 @@ mod tests {
     use super::*;
     use crate::buffer::{OutputKind, OutputLine};
     use ansi_to_tui::IntoText;
-    use ratatui::{Terminal, backend::TestBackend};
+    use ratatui::{backend::TestBackend, Terminal};
 
     /// Convert terminal buffer to string for snapshot testing
     fn buffer_to_string(terminal: &Terminal<TestBackend>) -> String {
