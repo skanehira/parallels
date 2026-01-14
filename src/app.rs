@@ -68,4 +68,13 @@ impl App {
     pub fn search_state_mut(&mut self) -> &mut SearchState {
         &mut self.search_state
     }
+
+    /// Search in current tab's buffer
+    ///
+    /// This method is needed to avoid borrow conflicts when accessing
+    /// both tab_manager and search_state mutably.
+    pub fn search_in_current_tab(&mut self, query: &str) {
+        let buffer = self.tab_manager.current_tab().buffer();
+        self.search_state.search(query, buffer);
+    }
 }
