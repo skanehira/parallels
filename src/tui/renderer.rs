@@ -1,9 +1,10 @@
 use ratatui::{
-    Frame,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
+    symbols::border,
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph, Tabs, Wrap},
+    widgets::{Block, Borders, Paragraph, Wrap},
+    Frame,
 };
 
 use crate::app::{App, Mode};
@@ -93,7 +94,7 @@ impl Renderer {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(3), // Tab bar
+                Constraint::Length(2), // Tab bar (no bottom border)
                 Constraint::Min(1),    // Output area
                 Constraint::Length(1), // Status bar
             ])
@@ -104,26 +105,78 @@ impl Renderer {
         Self::render_status_bar(frame, app, chunks[2]);
     }
 
+    /// Calculate tab divider positions (x coordinates where │ appears)
+    fn calc_tab_divider_positions(app: &App, area_width: u16) -> Vec<u16> {
+        let tab_manager = app.tab_manager();
+        let mut positions = Vec::new();
+        let mut x: u16 = 1; // Start after left border
+
+        for (i, tab) in tab_manager.iter().enumerate() {
+            if i > 0 {
+                positions.push(x);
+                x += 1; // For the │ divider
+            }
+            // " name " = name.len() + 2 spaces
+            let tab_width = tab.display_name().chars().count() as u16 + 2;
+            x += tab_width;
+            if x >= area_width - 1 {
+                break;
+            }
+        }
+        positions
+    }
+
     /// Render the tab bar
     fn render_tab_bar(frame: &mut Frame, app: &App, area: Rect) {
         let tab_manager = app.tab_manager();
-        let titles: Vec<Line> = tab_manager
-            .iter()
-            .map(|tab| Line::from(Span::raw(tab.display_name())))
-            .collect();
+        let divider_positions = Self::calc_tab_divider_positions(app, area.width);
 
-        let tabs = Tabs::new(titles)
-            .block(Block::default().borders(Borders::ALL).title("Commands"))
-            .select(tab_manager.active_index())
-            .style(Style::default().fg(Color::White))
-            .highlight_style(
+        // Build top border with title and ┬ at divider positions
+        let title = "Commands";
+        let title_len = title.chars().count() as u16;
+        let mut top_border = String::with_capacity(area.width as usize);
+        top_border.push('┌');
+        top_border.push_str(title);
+        for x in (1 + title_len)..area.width.saturating_sub(1) {
+            if divider_positions.contains(&x) {
+                top_border.push('┬');
+            } else {
+                top_border.push('─');
+            }
+        }
+        top_border.push('┐');
+
+        // Build tab content line
+        let mut tab_spans: Vec<Span> = vec![Span::raw("│")];
+        for (i, tab) in tab_manager.iter().enumerate() {
+            if i > 0 {
+                tab_spans.push(Span::raw("│"));
+            }
+            let name = format!(" {} ", tab.display_name());
+            let style = if i == tab_manager.active_index() {
                 Style::default()
                     .fg(Color::Yellow)
-                    .add_modifier(Modifier::BOLD),
-            )
-            .divider("|");
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(Color::White)
+            };
+            tab_spans.push(Span::styled(name, style));
+        }
+        // Fill remaining space
+        let used_width: u16 = tab_spans
+            .iter()
+            .map(|s| s.content.chars().count() as u16)
+            .sum();
+        let remaining = area.width.saturating_sub(used_width + 1);
+        if remaining > 0 {
+            tab_spans.push(Span::raw(" ".repeat(remaining as usize)));
+        }
+        tab_spans.push(Span::raw("│"));
 
-        frame.render_widget(tabs, area);
+        let lines = vec![Line::from(Span::raw(top_border)), Line::from(tab_spans)];
+
+        let paragraph = Paragraph::new(lines);
+        frame.render_widget(paragraph, area);
     }
 
     /// Render the output area
@@ -135,8 +188,31 @@ impl Renderer {
         let search_state = app.search_state();
         let current_match_line = search_state.current_match().map(|m| m.line);
 
-        // Account for border (subtract 2 for top and bottom borders)
-        let visible_height = area.height.saturating_sub(2) as usize;
+        // Build custom top border with ┴ at tab divider positions
+        let divider_positions = Self::calc_tab_divider_positions(app, area.width);
+        let mut top_border = String::with_capacity(area.width as usize);
+        top_border.push('├');
+        for x in 1..area.width.saturating_sub(1) {
+            if divider_positions.contains(&x) {
+                top_border.push('┴');
+            } else {
+                top_border.push('─');
+            }
+        }
+        top_border.push('┤');
+
+        // Split area: 1 line for top border, rest for content
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Length(1), Constraint::Min(1)])
+            .split(area);
+
+        // Render custom top border
+        let top_border_line = Paragraph::new(Line::from(top_border));
+        frame.render_widget(top_border_line, chunks[0]);
+
+        // Account for border (subtract 1 for bottom border only, top is separate)
+        let visible_height = chunks[1].height.saturating_sub(1) as usize;
 
         let lines: Vec<Line> = buffer
             .iter()
@@ -195,11 +271,21 @@ impl Renderer {
             })
             .collect();
 
+        // Use block without top border (we drew it separately)
+        let output_border = border::Set {
+            top_left: "│",
+            top_right: "│",
+            ..border::PLAIN
+        };
         let paragraph = Paragraph::new(lines)
-            .block(Block::default().borders(Borders::ALL).title("Output"))
+            .block(
+                Block::default()
+                    .borders(Borders::LEFT | Borders::RIGHT | Borders::BOTTOM)
+                    .border_set(output_border),
+            )
             .wrap(Wrap { trim: false });
 
-        frame.render_widget(paragraph, area);
+        frame.render_widget(paragraph, chunks[1]);
     }
 
     /// Render the status bar
@@ -253,7 +339,7 @@ mod tests {
     use super::*;
     use crate::buffer::{OutputKind, OutputLine};
     use ansi_to_tui::IntoText;
-    use ratatui::{Terminal, backend::TestBackend};
+    use ratatui::{backend::TestBackend, Terminal};
 
     /// Convert terminal buffer to string for snapshot testing
     fn buffer_to_string(terminal: &Terminal<TestBackend>) -> String {

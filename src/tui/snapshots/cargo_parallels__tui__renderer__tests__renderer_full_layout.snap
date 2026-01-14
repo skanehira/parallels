@@ -1,16 +1,15 @@
 ---
 source: src/tui/renderer.rs
-assertion_line: 414
 expression: buffer_to_string(&terminal)
 ---
 ┌Commands──────────────────────────────────────────────────┐
-│ cmd1 | cmd2                                              │
-└──────────────────────────────────────────────────────────┘
-┌Output────────────────────────────────────────────────────┐
+│ cmd1 │ cmd2                                              │
+├──────┴───────────────────────────────────────────────────┤
 │[stdout] Starting...                                      │
 │[stdout] Processing...                                    │
 │[stderr] Warning: something                               │
 │[stdout] Done.                                            │
+│                                                          │
 │                                                          │
 │                                                          │
 │                                                          │

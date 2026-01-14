@@ -1,12 +1,11 @@
 ---
 source: src/tui/renderer.rs
-assertion_line: 230
 expression: buffer_to_string(&terminal)
 ---
 ┌Commands──────────────────────────────┐
 │ echo hello                           │
-└──────────────────────────────────────┘
-┌Output────────────────────────────────┐
+├──────────────────────────────────────┤
+│                                      │
 │                                      │
 │                                      │
 │                                      │
