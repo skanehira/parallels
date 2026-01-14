@@ -1,0 +1,15 @@
+---
+source: src/tui/renderer.rs
+assertion_line: 310
+expression: buffer_to_string(&terminal)
+---
+┌Commands────────────────────────────────────────┐
+│ test                                           │
+└────────────────────────────────────────────────┘
+┌Output──────────────────────────────────────────┐
+│[stdout] hello world                            │
+│[stdout] hello there                            │
+│[stdout] goodbye                                │
+│                                                │
+└────────────────────────────────────────────────┘
+ SEARCH: hello (1/2) | n/N:next/prev Esc:cancel

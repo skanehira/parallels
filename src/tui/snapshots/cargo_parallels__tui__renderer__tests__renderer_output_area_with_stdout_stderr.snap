@@ -1,0 +1,17 @@
+---
+source: src/tui/renderer.rs
+assertion_line: 268
+expression: buffer_to_string(&terminal)
+---
+┌Commands────────────────────────────────────────┐
+│ test                                           │
+└────────────────────────────────────────────────┘
+┌Output──────────────────────────────────────────┐
+│[stdout] hello world                            │
+│[stderr] error message                          │
+│[stdout] another line                           │
+│                                                │
+│                                                │
+│                                                │
+└────────────────────────────────────────────────┘
+ NORMAL | Auto-scroll: OFF | h/l:tabs j/k:scroll /

@@ -1,0 +1,15 @@
+---
+source: src/tui/renderer.rs
+assertion_line: 246
+expression: buffer_to_string(&terminal)
+---
+┌Commands──────────────────────────────┐
+│ cmd1 | cmd2 | cmd3                   │
+└──────────────────────────────────────┘
+┌Output────────────────────────────────┐
+│                                      │
+│                                      │
+│                                      │
+│                                      │
+└──────────────────────────────────────┘
+ NORMAL | Auto-scroll: ON | h/l:tabs j/k

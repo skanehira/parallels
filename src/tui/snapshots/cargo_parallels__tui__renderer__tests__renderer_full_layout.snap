@@ -1,0 +1,20 @@
+---
+source: src/tui/renderer.rs
+assertion_line: 338
+expression: buffer_to_string(&terminal)
+---
+┌Commands──────────────────────────────────────────────────┐
+│ cmd1 | cmd2                                              │
+└──────────────────────────────────────────────────────────┘
+┌Output────────────────────────────────────────────────────┐
+│[stdout] Starting...                                      │
+│[stdout] Processing...                                    │
+│[stderr] Warning: something                               │
+│[stdout] Done.                                            │
+│                                                          │
+│                                                          │
+│                                                          │
+│                                                          │
+│                                                          │
+└──────────────────────────────────────────────────────────┘
+ SEARCH: Done (1/1) | n/N:next/prev Esc:cancel
