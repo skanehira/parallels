@@ -109,7 +109,7 @@ Manages the collection of command tabs:
 - **Tab**: Per-command state including:
   - Command string
   - OutputBuffer (ring buffer with max lines)
-  - Scroll position
+  - Scroll position (vertical and horizontal)
   - Auto-scroll flag
   - Command status (Running/Finished/Failed)
 
@@ -143,7 +143,7 @@ Renders the UI using ratatui:
 
 Handles keyboard input based on current mode:
 
-- **Normal mode**: Navigation, tab switching, search initiation
+- **Normal mode**: Navigation (h/l for horizontal scroll, j/k for vertical scroll), tab switching (Ctrl-h/l), search initiation
 - **Search mode**: Text input with Emacs keybindings via `tui-input`
 
 ## Key Design Decisions

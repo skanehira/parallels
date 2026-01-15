@@ -54,7 +54,9 @@ parallels -b 5000 "command1" "command2"
 | Key                 | Action                                             |
 | ------------------- | -------------------------------------------------- |
 | `Ctrl+C`            | Quit                                               |
-| `h` / `l`           | Switch to previous/next tab                        |
+| `Ctrl+h` / `Ctrl+l` | Switch to previous/next tab                        |
+| `h` / `l`           | Scroll left/right (horizontal scroll)              |
+| `0`                 | Scroll to leftmost position                        |
 | `j` / `k`           | Scroll down/up                                     |
 | `Ctrl+d` / `Ctrl+u` | Scroll half page down/up                           |
 | `g` / `G`           | Jump to top/bottom                                 |
