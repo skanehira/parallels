@@ -94,6 +94,8 @@ async fn run_app(
 
         // Check if we should quit
         if app.should_quit() {
+            // Kill all child processes before exiting
+            app.kill_all().await;
             break;
         }
     }

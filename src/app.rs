@@ -1,3 +1,5 @@
+use nix::sys::signal::{Signal, killpg};
+use nix::unistd::Pid;
 use tokio::process::Child;
 use tokio::sync::mpsc;
 
@@ -102,9 +104,18 @@ impl App {
     }
 
     /// Kill all running processes
+    ///
+    /// Sends SIGKILL to all process groups to ensure child processes
+    /// (e.g., servers started by shell commands) are also terminated.
+    /// Waits for each process to terminate before returning.
     pub async fn kill_all(&mut self) {
         for child in &mut self.children {
-            let _ = child.kill().await;
+            if let Some(pid) = child.id() {
+                // Send SIGKILL to the process group (PGID = PID because we used process_group(0))
+                let _ = killpg(Pid::from_raw(pid as i32), Signal::SIGKILL);
+            }
+            // Wait for the process to terminate
+            let _ = child.wait().await;
         }
     }
 
@@ -161,6 +172,12 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use nix::sys::signal::kill;
+
+    /// Check if a process exists by sending signal 0
+    fn process_exists(pid: i32) -> bool {
+        kill(Pid::from_raw(pid), None).is_ok()
+    }
 
     #[test]
     fn app_new_initializes_correctly() {
@@ -243,5 +260,82 @@ mod tests {
 
         let buffer = app.tab_manager().current_tab().buffer();
         assert!(!buffer.is_empty(), "Should have received output");
+    }
+
+    #[tokio::test]
+    async fn app_kill_all_terminates_child_processes() {
+        // Spawn a command that runs a long-running child process
+        // The shell (sh) will spawn sleep as a child process
+        let mut app = App::new(vec!["sleep 100".into()], 100);
+        app.spawn_commands().await;
+
+        // Wait a bit for process to start
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        // Get the shell process PID
+        let shell_pid = app.children[0].id().expect("Should have PID");
+
+        // Verify the process is running
+        assert!(
+            process_exists(shell_pid as i32),
+            "Shell process should be running"
+        );
+
+        // Kill all processes and wait for them to terminate
+        app.kill_all().await;
+
+        // Verify the shell process is terminated
+        assert!(
+            !process_exists(shell_pid as i32),
+            "Shell process should be terminated after kill_all"
+        );
+    }
+
+    #[tokio::test]
+    async fn app_kill_all_terminates_grandchild_processes() {
+        // Spawn a command where the shell spawns another shell that spawns sleep
+        // This tests that grandchild processes are also killed via process group
+        let mut app = App::new(vec!["sh -c 'sleep 100'".into()], 100);
+        app.spawn_commands().await;
+
+        // Wait a bit for processes to start
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+
+        // Get the parent shell process PID (which is also the PGID)
+        let pgid = app.children[0].id().expect("Should have PID") as i32;
+
+        // Find all processes in the process group using ps
+        let ps_output = std::process::Command::new("ps")
+            .arg("-o")
+            .arg("pid=")
+            .arg("-g")
+            .arg(pgid.to_string())
+            .output()
+            .expect("ps should work");
+
+        let child_pids: Vec<i32> = String::from_utf8_lossy(&ps_output.stdout)
+            .lines()
+            .filter_map(|line| line.trim().parse().ok())
+            .collect();
+
+        // Should have at least the parent process
+        assert!(
+            !child_pids.is_empty(),
+            "Should have processes in the group (PGID={})",
+            pgid
+        );
+
+        // Kill all processes and wait for them to terminate
+        app.kill_all().await;
+
+        // Verify all processes in the group are terminated
+        for pid in child_pids {
+            assert!(
+                !process_exists(pid),
+                "Process {} should be terminated after kill_all (PGID={})",
+                pid,
+                pgid
+            );
+        }
     }
 }

@@ -24,6 +24,7 @@ futures = "0.3"
 ansi-to-tui = "8.0"
 tui-input = { version = "0.15", features = ["crossterm"] }
 thiserror = "2.0"
+nix = { version = "0.30", features = ["signal", "process"] }
 
 [dev-dependencies]
 insta = "1.42"

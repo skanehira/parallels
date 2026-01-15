@@ -1,3 +1,5 @@
+use std::process::Stdio;
+
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::{Child, Command};
 use tokio::sync::mpsc;
@@ -14,20 +16,24 @@ impl CommandRunner {
     /// Executes the command using `sh -c "command"` format,
     /// capturing stdout/stderr asynchronously.
     ///
+    /// The command is spawned in a new process group so that
+    /// all child processes can be killed together.
+    ///
     /// Events are sent directly to the provided channel.
     pub async fn spawn(
         event_tx: mpsc::Sender<AppEvent>,
         command: &str,
         tab_index: usize,
     ) -> std::io::Result<Child> {
-        use std::process::Stdio;
-
-        let mut child = Command::new("sh")
-            .arg("-c")
+        let mut cmd = Command::new("sh");
+        cmd.arg("-c")
             .arg(command)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
-            .spawn()?;
+            // Create a new process group with PGID = child PID
+            .process_group(0);
+
+        let mut child = cmd.spawn()?;
 
         // Capture stdout
         if let Some(stdout) = child.stdout.take() {
