@@ -81,6 +81,12 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) {
             }
         }
 
+        // Restart current tab's process
+        KeyCode::Char('R') => {
+            let tab_index = app.tab_manager().active_index();
+            app.request_restart(tab_index);
+        }
+
         _ => {}
     }
 }
@@ -397,6 +403,22 @@ mod tests {
 
         // Should wrap to last match
         assert!(app.search_state().current_match_display().is_some());
+    }
+
+    #[test]
+    fn input_normal_mode_upper_r_requests_restart() {
+        let mut app = App::new(vec!["cmd1".into(), "cmd2".into()], 100);
+        app.tab_manager_mut().next_tab(); // Move to tab 1
+        assert_eq!(app.tab_manager().active_index(), 1);
+
+        // Initially no pending restart
+        assert!(app.take_pending_restart().is_none());
+
+        // Press R
+        handle_key(&mut app, key(KeyCode::Char('R')));
+
+        // Should request restart for current tab (index 1)
+        assert_eq!(app.take_pending_restart(), Some(1));
     }
 
     #[test]

@@ -82,6 +82,11 @@ async fn run_app(
             Some(Ok(Event::Key(key))) = event_stream.next() => {
                 if key.kind == KeyEventKind::Press {
                     handle_key(&mut app, key);
+
+                    // Handle pending restart request
+                    if let Some(tab_index) = app.take_pending_restart() {
+                        app.restart_process(tab_index).await;
+                    }
                 }
             }
             // Render at fixed interval

@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use nix::sys::signal::{Signal, killpg};
 use nix::unistd::Pid;
 use tokio::process::Child;
@@ -27,15 +29,16 @@ pub struct App {
     event_rx: mpsc::Receiver<AppEvent>,
     /// Sender for events (kept to clone for spawned tasks)
     event_tx: mpsc::Sender<AppEvent>,
-    /// Child processes for killing on quit
-    children: Vec<Child>,
+    /// Child processes indexed by tab index
+    children: HashMap<usize, Child>,
+    /// Pending restart request (tab index)
+    pending_restart: Option<usize>,
 }
 
 impl App {
     /// Initialize the application
     pub fn new(commands: Vec<String>, max_buffer_lines: usize) -> Self {
         let (event_tx, event_rx) = mpsc::channel(1000);
-        let children = Vec::new();
         Self {
             tab_manager: TabManager::new(commands, max_buffer_lines),
             mode: Mode::Normal,
@@ -43,7 +46,8 @@ impl App {
             should_quit: false,
             event_rx,
             event_tx,
-            children,
+            children: HashMap::new(),
+            pending_restart: None,
         }
     }
 
@@ -60,7 +64,7 @@ impl App {
             let tx = self.event_tx.clone();
             match CommandRunner::spawn(tx.clone(), &command, tab_index).await {
                 Ok(child) => {
-                    self.children.push(child);
+                    self.children.insert(tab_index, child);
                 }
                 Err(e) => {
                     let _ = tx
@@ -109,7 +113,7 @@ impl App {
     /// (e.g., servers started by shell commands) are also terminated.
     /// Waits for each process to terminate before returning.
     pub async fn kill_all(&mut self) {
-        for child in &mut self.children {
+        for child in self.children.values_mut() {
             if let Some(pid) = child.id() {
                 // Send SIGKILL to the process group (PGID = PID because we used process_group(0))
                 let _ = killpg(Pid::from_raw(pid as i32), Signal::SIGKILL);
@@ -166,6 +170,61 @@ impl App {
     pub fn search_in_current_tab(&mut self, query: &str) {
         let buffer = self.tab_manager.current_tab().buffer();
         self.search_state.search(query, buffer);
+    }
+
+    /// Request restart for a specific tab
+    pub fn request_restart(&mut self, tab_index: usize) {
+        self.pending_restart = Some(tab_index);
+    }
+
+    /// Take pending restart request
+    ///
+    /// Returns the tab index if a restart was requested, None otherwise.
+    /// Clears the pending restart after taking.
+    pub fn take_pending_restart(&mut self) -> Option<usize> {
+        self.pending_restart.take()
+    }
+
+    /// Restart a specific tab's command
+    ///
+    /// Kills the existing process, resets the tab state, and spawns a new process.
+    pub async fn restart_process(&mut self, tab_index: usize) {
+        // Kill existing process if any
+        if let Some(mut child) = self.children.remove(&tab_index) {
+            if let Some(pid) = child.id() {
+                let _ = killpg(Pid::from_raw(pid as i32), Signal::SIGKILL);
+            }
+            let _ = child.wait().await;
+        }
+
+        // Reset tab state
+        if let Some(tab) = self.tab_manager.get_tab_mut(tab_index) {
+            tab.reset();
+        }
+
+        // Get command for this tab
+        let command = self
+            .tab_manager
+            .get_tab(tab_index)
+            .map(|tab| tab.command().to_string());
+
+        // Spawn new process
+        if let Some(command) = command {
+            let tx = self.event_tx.clone();
+            match CommandRunner::spawn(tx.clone(), &command, tab_index).await {
+                Ok(child) => {
+                    self.children.insert(tab_index, child);
+                }
+                Err(e) => {
+                    let _ = tx
+                        .send(AppEvent::Failed {
+                            tab_index,
+                            reason: e.to_string(),
+                        })
+                        .await;
+                }
+            }
+        }
     }
 }
 
@@ -273,7 +332,12 @@ mod tests {
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
 
         // Get the shell process PID
-        let shell_pid = app.children[0].id().expect("Should have PID");
+        let shell_pid = app
+            .children
+            .get(&0)
+            .expect("Should have child at index 0")
+            .id()
+            .expect("Should have PID");
 
         // Verify the process is running
         assert!(
@@ -289,5 +353,85 @@ mod tests {
             !process_exists(shell_pid as i32),
             "Shell process should be terminated after kill_all"
         );
+    }
+
+    #[test]
+    fn app_request_restart_sets_pending() {
+        let mut app = App::new(vec!["cmd".into()], 100);
+
+        // Initially no pending restart
+        assert!(app.take_pending_restart().is_none());
+
+        // Request restart for tab 0
+        app.request_restart(0);
+
+        // Should have pending restart
+        assert_eq!(app.take_pending_restart(), Some(0));
+
+        // After taking, should be None again
+        assert!(app.take_pending_restart().is_none());
+    }
+
+    #[tokio::test]
+    async fn app_restart_tab_kills_and_respawns() {
+        use crate::tui::CommandStatus;
+
+        let mut app = App::new(vec!["sleep 100".into()], 100);
+        app.spawn_commands().await;
+
+        // Wait a bit for process to start
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        // Get the original PID
+        let original_pid = app
+            .children
+            .get(&0)
+            .expect("Should have child")
+            .id()
+            .expect("Should have PID");
+
+        // Verify process is running
+        assert!(process_exists(original_pid as i32));
+
+        // Add some output to the tab
+        app.tab_manager_mut().get_tab_mut(0).unwrap().push_output(
+            crate::buffer::OutputLine::new(crate::buffer::OutputKind::Stdout, "test".into()),
+        );
+        app.tab_manager_mut()
+            .get_tab_mut(0)
+            .unwrap()
+            .set_status(CommandStatus::Finished { exit_code: 0 });
+
+        // Restart the tab
+        app.restart_process(0).await;
+
+        // Original process should be killed
+        assert!(
+            !process_exists(original_pid as i32),
+            "Original process should be terminated"
+        );
+
+        // New process should be spawned
+        let new_pid = app
+            .children
+            .get(&0)
+            .expect("Should have new child")
+            .id()
+            .expect("Should have PID");
+        assert_ne!(original_pid, new_pid, "New process should have different PID");
+        assert!(
+            process_exists(new_pid as i32),
+            "New process should be running"
+        );
+
+        // Tab should be reset
+        assert!(app.tab_manager().get_tab(0).unwrap().buffer().is_empty());
+        assert_eq!(
+            app.tab_manager().get_tab(0).unwrap().status(),
+            &CommandStatus::Running
+        );
+
+        // Cleanup
+        app.kill_all().await;
     }
 }

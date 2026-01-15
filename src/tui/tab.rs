@@ -163,6 +163,17 @@ impl Tab {
         self.horizontal_scroll = 0;
     }
 
+    /// Reset the tab to initial state
+    ///
+    /// Clears the buffer, resets status to Running, and resets scroll positions.
+    pub fn reset(&mut self) {
+        self.buffer.clear();
+        self.status = CommandStatus::Running;
+        self.scroll_offset = 0;
+        self.horizontal_scroll = 0;
+        self.auto_scroll = true;
+    }
+
     /// Calculate maximum scroll offset
     fn max_scroll_offset(&self) -> usize {
         self.buffer.len().saturating_sub(self.visible_lines)
@@ -396,5 +407,30 @@ mod tests {
 
         tab.scroll_to_left();
         assert_eq!(tab.horizontal_scroll(), 0);
+    }
+
+    #[test]
+    fn tab_reset_clears_buffer_and_resets_state() {
+        let mut tab = Tab::new("test".into(), 100);
+        // Add some output
+        for i in 0..10 {
+            tab.push_output(OutputLine::new(OutputKind::Stdout, format!("line{}", i)));
+        }
+        // Modify state
+        tab.set_status(CommandStatus::Finished { exit_code: 0 });
+        tab.scroll_to_line(5);
+        tab.scroll_right();
+        tab.scroll_right();
+        tab.set_auto_scroll(false);
+
+        // Reset
+        tab.reset();
+
+        // Verify all state is reset
+        assert!(tab.buffer().is_empty());
+        assert_eq!(tab.status(), &CommandStatus::Running);
+        assert_eq!(tab.scroll_offset(), 0);
+        assert_eq!(tab.horizontal_scroll(), 0);
+        assert!(tab.auto_scroll());
     }
 }

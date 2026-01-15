@@ -106,6 +106,11 @@ impl OutputBuffer {
     pub fn iter(&self) -> impl Iterator<Item = &OutputLine> {
         self.lines.iter()
     }
+
+    /// Clear all lines from the buffer
+    pub fn clear(&mut self) {
+        self.lines.clear();
+    }
 }
 
 #[cfg(test)]
@@ -238,5 +243,18 @@ mod tests {
         assert!(red_span.is_some(), "Should have red span");
         assert_eq!(green_span.unwrap().content, "OK");
         assert_eq!(red_span.unwrap().content, "ERROR");
+    }
+
+    #[test]
+    fn output_buffer_clear_removes_all_lines() {
+        let mut buffer = OutputBuffer::new(100);
+        buffer.push(OutputLine::new(OutputKind::Stdout, "line1".into()));
+        buffer.push(OutputLine::new(OutputKind::Stdout, "line2".into()));
+        buffer.push(OutputLine::new(OutputKind::Stdout, "line3".into()));
+
+        buffer.clear();
+
+        assert!(buffer.is_empty());
+        assert_eq!(buffer.len(), 0);
     }
 }
