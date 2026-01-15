@@ -4,7 +4,7 @@ use ratatui::{
     style::{Color, Modifier, Style},
     symbols::border,
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph, Wrap},
+    widgets::{Block, Borders, Paragraph},
 };
 
 use crate::app::{App, Mode};
@@ -184,6 +184,7 @@ impl Renderer {
         let tab = app.tab_manager().current_tab();
         let buffer = tab.buffer();
         let scroll_offset = tab.scroll_offset();
+        let horizontal_scroll = tab.horizontal_scroll();
 
         let search_state = app.search_state();
         let current_match_line = search_state.current_match().map(|m| m.line);
@@ -283,7 +284,7 @@ impl Renderer {
                     .borders(Borders::LEFT | Borders::RIGHT | Borders::BOTTOM)
                     .border_set(output_border),
             )
-            .wrap(Wrap { trim: false });
+            .scroll((0, horizontal_scroll as u16));
 
         frame.render_widget(paragraph, chunks[1]);
     }
@@ -303,7 +304,7 @@ impl Renderer {
                     ""
                 };
                 format!(
-                    " NORMAL | Auto-scroll: {} | h/l:tabs j/k:scroll /:search{} C-c:quit",
+                    " NORMAL | Auto-scroll: {} | C-h/l:tabs h/l:horiz j/k:scroll /:search{} C-c:quit",
                     auto_scroll, search_hint
                 )
             }

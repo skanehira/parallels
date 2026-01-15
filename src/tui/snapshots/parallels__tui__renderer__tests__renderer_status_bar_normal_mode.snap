@@ -9,4 +9,4 @@ expression: buffer_to_string(&terminal)
 │                                                │
 │                                                │
 └────────────────────────────────────────────────┘
- NORMAL | Auto-scroll: ON | h/l:tabs j/k:scroll /:
+ NORMAL | Auto-scroll: ON | C-h/l:tabs h/l:horiz j

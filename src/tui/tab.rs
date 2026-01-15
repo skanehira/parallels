@@ -20,6 +20,7 @@ pub struct Tab {
     buffer: OutputBuffer,
     status: CommandStatus,
     scroll_offset: usize,
+    horizontal_scroll: usize,
     auto_scroll: bool,
     visible_lines: usize,
 }
@@ -32,6 +33,7 @@ impl Tab {
             buffer: OutputBuffer::new(max_buffer_lines),
             status: CommandStatus::Running,
             scroll_offset: 0,
+            horizontal_scroll: 0,
             auto_scroll: true,
             visible_lines: 0,
         }
@@ -139,6 +141,26 @@ impl Tab {
     /// Set auto scroll
     pub fn set_auto_scroll(&mut self, enabled: bool) {
         self.auto_scroll = enabled;
+    }
+
+    /// Get current horizontal scroll offset
+    pub fn horizontal_scroll(&self) -> usize {
+        self.horizontal_scroll
+    }
+
+    /// Scroll left by one character
+    pub fn scroll_left(&mut self) {
+        self.horizontal_scroll = self.horizontal_scroll.saturating_sub(1);
+    }
+
+    /// Scroll right by one character
+    pub fn scroll_right(&mut self) {
+        self.horizontal_scroll += 1;
+    }
+
+    /// Scroll to leftmost position
+    pub fn scroll_to_left(&mut self) {
+        self.horizontal_scroll = 0;
     }
 
     /// Calculate maximum scroll offset
@@ -330,5 +352,49 @@ mod tests {
                 reason: "not found".into()
             }
         );
+    }
+
+    #[test]
+    fn tab_scroll_right_increases_horizontal_offset() {
+        let mut tab = Tab::new("test".into(), 100);
+        assert_eq!(tab.horizontal_scroll(), 0);
+
+        tab.scroll_right();
+        assert_eq!(tab.horizontal_scroll(), 1);
+
+        tab.scroll_right();
+        assert_eq!(tab.horizontal_scroll(), 2);
+    }
+
+    #[test]
+    fn tab_scroll_left_decreases_horizontal_offset() {
+        let mut tab = Tab::new("test".into(), 100);
+        tab.scroll_right();
+        tab.scroll_right();
+        assert_eq!(tab.horizontal_scroll(), 2);
+
+        tab.scroll_left();
+        assert_eq!(tab.horizontal_scroll(), 1);
+    }
+
+    #[test]
+    fn tab_scroll_left_stops_at_zero() {
+        let mut tab = Tab::new("test".into(), 100);
+        assert_eq!(tab.horizontal_scroll(), 0);
+
+        tab.scroll_left();
+        assert_eq!(tab.horizontal_scroll(), 0);
+    }
+
+    #[test]
+    fn tab_scroll_to_left_resets_horizontal_offset() {
+        let mut tab = Tab::new("test".into(), 100);
+        tab.scroll_right();
+        tab.scroll_right();
+        tab.scroll_right();
+        assert_eq!(tab.horizontal_scroll(), 3);
+
+        tab.scroll_to_left();
+        assert_eq!(tab.horizontal_scroll(), 0);
     }
 }

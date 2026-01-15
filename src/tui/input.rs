@@ -20,11 +20,20 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
 /// Handle key event in Normal mode
 fn handle_normal_mode(app: &mut App, key: KeyEvent) {
     match key.code {
-        // Tab navigation
-        KeyCode::Char('h') => app.tab_manager_mut().prev_tab(),
-        KeyCode::Char('l') => app.tab_manager_mut().next_tab(),
+        // Tab navigation (Ctrl-h/l)
+        KeyCode::Char('h') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            app.tab_manager_mut().prev_tab();
+        }
+        KeyCode::Char('l') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            app.tab_manager_mut().next_tab();
+        }
 
-        // Scroll
+        // Horizontal scroll (h/l/0)
+        KeyCode::Char('h') => app.tab_manager_mut().current_tab_mut().scroll_left(),
+        KeyCode::Char('l') => app.tab_manager_mut().current_tab_mut().scroll_right(),
+        KeyCode::Char('0') => app.tab_manager_mut().current_tab_mut().scroll_to_left(),
+
+        // Vertical scroll (j/k)
         KeyCode::Char('j') => app.tab_manager_mut().current_tab_mut().scroll_down(),
         KeyCode::Char('k') => app.tab_manager_mut().current_tab_mut().scroll_up(),
 
@@ -150,22 +159,54 @@ mod tests {
     }
 
     #[test]
-    fn input_normal_mode_h_switches_to_prev_tab() {
+    fn input_normal_mode_ctrl_h_switches_to_prev_tab() {
         let mut app = App::new(vec!["cmd1".into(), "cmd2".into()], 100);
         app.tab_manager_mut().next_tab(); // Move to tab 1
         assert_eq!(app.tab_manager().active_index(), 1);
 
-        handle_key(&mut app, key(KeyCode::Char('h')));
+        handle_key(&mut app, key_with_ctrl('h'));
         assert_eq!(app.tab_manager().active_index(), 0);
     }
 
     #[test]
-    fn input_normal_mode_l_switches_to_next_tab() {
+    fn input_normal_mode_ctrl_l_switches_to_next_tab() {
         let mut app = App::new(vec!["cmd1".into(), "cmd2".into()], 100);
         assert_eq!(app.tab_manager().active_index(), 0);
 
-        handle_key(&mut app, key(KeyCode::Char('l')));
+        handle_key(&mut app, key_with_ctrl('l'));
         assert_eq!(app.tab_manager().active_index(), 1);
+    }
+
+    #[test]
+    fn input_normal_mode_h_scrolls_left() {
+        let mut app = create_app_with_output();
+        // First scroll right
+        app.tab_manager_mut().current_tab_mut().scroll_right();
+        app.tab_manager_mut().current_tab_mut().scroll_right();
+        assert_eq!(app.tab_manager().current_tab().horizontal_scroll(), 2);
+
+        handle_key(&mut app, key(KeyCode::Char('h')));
+        assert_eq!(app.tab_manager().current_tab().horizontal_scroll(), 1);
+    }
+
+    #[test]
+    fn input_normal_mode_l_scrolls_right() {
+        let mut app = create_app_with_output();
+        assert_eq!(app.tab_manager().current_tab().horizontal_scroll(), 0);
+
+        handle_key(&mut app, key(KeyCode::Char('l')));
+        assert_eq!(app.tab_manager().current_tab().horizontal_scroll(), 1);
+    }
+
+    #[test]
+    fn input_normal_mode_0_scrolls_to_left() {
+        let mut app = create_app_with_output();
+        app.tab_manager_mut().current_tab_mut().scroll_right();
+        app.tab_manager_mut().current_tab_mut().scroll_right();
+        assert_eq!(app.tab_manager().current_tab().horizontal_scroll(), 2);
+
+        handle_key(&mut app, key(KeyCode::Char('0')));
+        assert_eq!(app.tab_manager().current_tab().horizontal_scroll(), 0);
     }
 
     #[test]
