@@ -3,6 +3,13 @@ name = "parallels"
 version = "0.0.1"
 authors = ["skanehira"]
 edition = "2024"
+description = "A TUI tool to run multiple commands in parallel and view their output in real-time"
+license = "MIT"
+repository = "https://github.com/skanehira/parallels"
+homepage = "https://github.com/skanehira/parallels"
+readme = "README.md"
+keywords = ["tui", "parallel", "terminal", "cli"]
+categories = ["command-line-utilities"]
 
 [[bin]]
 name = "parallels"
