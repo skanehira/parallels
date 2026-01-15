@@ -394,9 +394,13 @@ mod tests {
         assert!(process_exists(original_pid as i32));
 
         // Add some output to the tab
-        app.tab_manager_mut().get_tab_mut(0).unwrap().push_output(
-            crate::buffer::OutputLine::new(crate::buffer::OutputKind::Stdout, "test".into()),
-        );
+        app.tab_manager_mut()
+            .get_tab_mut(0)
+            .unwrap()
+            .push_output(crate::buffer::OutputLine::new(
+                crate::buffer::OutputKind::Stdout,
+                "test".into(),
+            ));
         app.tab_manager_mut()
             .get_tab_mut(0)
             .unwrap()
@@ -418,7 +422,10 @@ mod tests {
             .expect("Should have new child")
             .id()
             .expect("Should have PID");
-        assert_ne!(original_pid, new_pid, "New process should have different PID");
+        assert_ne!(
+            original_pid, new_pid,
+            "New process should have different PID"
+        );
         assert!(
             process_exists(new_pid as i32),
             "New process should be running"
