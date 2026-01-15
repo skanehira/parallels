@@ -35,11 +35,6 @@ jobs:
             os: Darwin
             arch: arm64
             ext: tar.gz
-          - target: x86_64-pc-windows-msvc
-            runner: windows-latest
-            os: Windows
-            arch: x86_64
-            ext: zip
     runs-on: ${{ matrix.runner }}
     steps:
       - name: Checkout
@@ -72,23 +67,13 @@ jobs:
       - name: Build
         run: cargo build --release
 
-      - name: Create archive (Unix)
-        if: matrix.os != 'Windows'
+      - name: Create archive
         shell: bash
         run: |
           name="${{ steps.project.outputs.name }}"
           archive_name="${name}_${{ matrix.os }}_${{ matrix.arch }}.tar.gz"
           tar -czvf "$archive_name" -C target/release "$name"
           echo "archive_name=$archive_name" >> "$GITHUB_ENV"
-
-      - name: Create archive (Windows)
-        if: matrix.os == 'Windows'
-        shell: pwsh
-        run: |
-          $name = "${{ steps.project.outputs.name }}"
-          $archiveName = "${name}_${{ matrix.os }}_${{ matrix.arch }}.zip"
-          Compress-Archive -Path "target/release/${name}.exe" -DestinationPath $archiveName
-          echo "archive_name=$archiveName" >> $env:GITHUB_ENV
 
       - name: Upload artifact
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
