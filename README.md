@@ -21,9 +21,15 @@ A TUI tool to run multiple commands in parallel and view their output in real-ti
 
 ## Installation
 
+### From crates.io
+
 ```bash
 cargo install parallels
 ```
+
+### From binary
+
+Download the latest binary from [Releases](https://github.com/skanehira/parallels/releases).
 
 ## Usage
 
