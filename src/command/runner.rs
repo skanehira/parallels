@@ -28,6 +28,7 @@ impl CommandRunner {
         let mut cmd = Command::new("sh");
         cmd.arg("-c")
             .arg(command)
+            .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             // Create a new process group with PGID = child PID
