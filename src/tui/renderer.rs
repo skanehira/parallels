@@ -237,7 +237,7 @@ impl Renderer {
                 let base_spans: Vec<Span<'static>> = output_line.spans().to_vec();
 
                 // Check for search highlights
-                let final_spans = if !search_state.query().is_empty() {
+                let final_spans = if search_state.has_matches() {
                     // Search active - overlay highlights on ANSI-parsed spans
                     let matches: Vec<_> = search_state
                         .matches()

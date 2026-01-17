@@ -158,9 +158,19 @@ impl SearchState {
         self.current_index = None;
     }
 
+    /// Clear only the input field (preserves matches)
+    pub fn clear_input(&mut self) {
+        self.input.reset();
+    }
+
     /// Check if search is active (query is not empty)
     pub fn is_active(&self) -> bool {
         !self.query().is_empty()
+    }
+
+    /// Check if matches exist
+    pub fn has_matches(&self) -> bool {
+        !self.matches.is_empty()
     }
 }
 
@@ -442,5 +452,68 @@ mod tests {
         assert_eq!(state.match_count(), 2);
         assert_eq!(state.matches()[0].line, 0);
         assert_eq!(state.matches()[1].line, 2);
+    }
+
+    #[test]
+    fn clear_input_should_clear_query_but_preserve_matches() {
+        let buffer = create_buffer_with_lines(&["hello world", "hello rust"]);
+        let mut state = SearchState::new();
+
+        state.search("hello", &buffer);
+        assert_eq!(state.query(), "hello");
+        assert_eq!(state.matches().len(), 2);
+
+        state.clear_input();
+
+        assert_eq!(state.query(), ""); // 入力がクリアされる
+        assert_eq!(state.matches().len(), 2); // マッチは保持される
+    }
+
+    #[test]
+    fn has_matches_returns_true_when_matches_exist_after_clear_input() {
+        let buffer = create_buffer_with_lines(&["hello world"]);
+        let mut state = SearchState::new();
+
+        state.search("hello", &buffer);
+        assert!(state.has_matches());
+
+        state.clear_input();
+
+        assert!(state.has_matches()); // クリア後もマッチは存在
+    }
+
+    #[test]
+    fn search_replaces_previous_matches_with_new_ones() {
+        let buffer = create_buffer_with_lines(&["hello world", "foo bar"]);
+        let mut state = SearchState::new();
+
+        // 最初の検索
+        state.search("hello", &buffer);
+        assert_eq!(state.matches().len(), 1);
+        assert_eq!(state.matches()[0].line, 0); // "hello world" の行
+
+        // 再検索 - 前のマッチが消えて新しいマッチに置き換わる
+        state.search("foo", &buffer);
+        assert_eq!(state.matches().len(), 1);
+        assert_eq!(state.matches()[0].line, 1); // "foo bar" の行（前の "hello" のマッチはない）
+    }
+
+    #[test]
+    fn search_after_clear_input_updates_matches_correctly() {
+        let buffer = create_buffer_with_lines(&["hello world", "foo bar"]);
+        let mut state = SearchState::new();
+
+        // 最初の検索
+        state.search("hello", &buffer);
+        assert_eq!(state.matches().len(), 1);
+
+        // 入力をクリア（マッチは保持）
+        state.clear_input();
+        assert!(state.has_matches());
+
+        // 再検索 - 新しいマッチで更新される
+        state.search("foo", &buffer);
+        assert_eq!(state.matches().len(), 1);
+        assert_eq!(state.matches()[0].line, 1); // "foo bar" の行のみ
     }
 }
