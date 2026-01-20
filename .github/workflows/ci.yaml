@@ -77,7 +77,7 @@ jobs:
           cache-shared-key: setup-rust-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Install tools
-        uses: taiki-e/install-action@90558ad1e179036f31467972b00dec6cb80701fa # v2.66.3
+        uses: taiki-e/install-action@30791125b88ed3200de59e9b5edbf78d1949e41f # v2.67.1
         with:
           tool: cargo-llvm-cov, cargo-nextest
 
