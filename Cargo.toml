@@ -27,5 +27,5 @@ thiserror = "2.0"
 nix = { version = "0.30", features = ["signal", "process"] }
 
 [dev-dependencies]
-insta = "1.42"
+insta = "1.46"
 rstest = "0.26"
