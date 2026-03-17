@@ -16,7 +16,7 @@ name = "parallels"
 path = "src/main.rs"
 
 [dependencies]
-clap = { version = "4.5", features = ["derive"] }
+clap = { version = "4.6", features = ["derive"] }
 ratatui = "0.30"
 crossterm = { version = "0.29", features = ["event-stream"] }
 tokio = { version = "1.50", features = ["full"] }
