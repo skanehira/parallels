@@ -66,11 +66,13 @@ async fn run_app(
     let mut render_interval = interval(Duration::from_millis(RENDER_INTERVAL_MS));
 
     loop {
-        // Update visible lines for all tabs based on terminal size
+        // Update visible lines/width for all tabs based on terminal size
         let size = terminal.size()?;
         let visible_lines = size.height.saturating_sub(5) as usize;
+        let visible_width = size.width.saturating_sub(2) as usize; // Exclude left/right borders
         for tab in app.tab_manager_mut().iter_mut() {
             tab.set_visible_lines(visible_lines);
+            tab.set_visible_width(visible_width);
         }
 
         tokio::select! {

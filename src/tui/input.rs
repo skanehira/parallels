@@ -33,6 +33,16 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) {
         KeyCode::Char('l') => app.tab_manager_mut().current_tab_mut().scroll_right(),
         KeyCode::Char('0') => app.tab_manager_mut().current_tab_mut().scroll_to_left(),
 
+        // Horizontal half-page scroll (w/b)
+        KeyCode::Char('w') => app
+            .tab_manager_mut()
+            .current_tab_mut()
+            .scroll_half_page_right(),
+        KeyCode::Char('b') => app
+            .tab_manager_mut()
+            .current_tab_mut()
+            .scroll_half_page_left(),
+
         // Vertical scroll (j/k)
         KeyCode::Char('j') => app.tab_manager_mut().current_tab_mut().scroll_down(),
         KeyCode::Char('k') => app.tab_manager_mut().current_tab_mut().scroll_up(),
@@ -213,6 +223,33 @@ mod tests {
         assert_eq!(app.tab_manager().current_tab().horizontal_scroll(), 2);
 
         handle_key(&mut app, key(KeyCode::Char('0')));
+        assert_eq!(app.tab_manager().current_tab().horizontal_scroll(), 0);
+    }
+
+    #[test]
+    fn input_normal_mode_w_scrolls_half_page_right() {
+        let mut app = create_app_with_output();
+        app.tab_manager_mut()
+            .current_tab_mut()
+            .set_visible_width(80);
+        assert_eq!(app.tab_manager().current_tab().horizontal_scroll(), 0);
+
+        handle_key(&mut app, key(KeyCode::Char('w')));
+        assert_eq!(app.tab_manager().current_tab().horizontal_scroll(), 40); // half of 80
+    }
+
+    #[test]
+    fn input_normal_mode_b_scrolls_half_page_left() {
+        let mut app = create_app_with_output();
+        app.tab_manager_mut()
+            .current_tab_mut()
+            .set_visible_width(80);
+        app.tab_manager_mut()
+            .current_tab_mut()
+            .scroll_half_page_right();
+        assert_eq!(app.tab_manager().current_tab().horizontal_scroll(), 40);
+
+        handle_key(&mut app, key(KeyCode::Char('b')));
         assert_eq!(app.tab_manager().current_tab().horizontal_scroll(), 0);
     }
 

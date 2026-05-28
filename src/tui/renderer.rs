@@ -304,7 +304,7 @@ impl Renderer {
                     ""
                 };
                 format!(
-                    " NORMAL | Auto-scroll: {} | C-h/l:tabs h/l:horiz j/k:scroll /:search R:restart{} C-c:quit",
+                    " NORMAL | Auto-scroll: {} | C-h/l:tabs h/l/w/b:horiz j/k:scroll /:search R:restart{} C-c:quit",
                     auto_scroll, search_hint
                 )
             }

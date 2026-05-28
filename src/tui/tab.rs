@@ -23,6 +23,7 @@ pub struct Tab {
     horizontal_scroll: usize,
     auto_scroll: bool,
     visible_lines: usize,
+    visible_width: usize,
 }
 
 impl Tab {
@@ -36,6 +37,7 @@ impl Tab {
             horizontal_scroll: 0,
             auto_scroll: true,
             visible_lines: 0,
+            visible_width: 0,
         }
     }
 
@@ -79,6 +81,11 @@ impl Tab {
     /// Set the number of visible lines
     pub fn set_visible_lines(&mut self, lines: usize) {
         self.visible_lines = lines;
+    }
+
+    /// Set the number of visible columns (viewport width)
+    pub fn set_visible_width(&mut self, width: usize) {
+        self.visible_width = width;
     }
 
     /// Get current scroll offset
@@ -161,6 +168,18 @@ impl Tab {
     /// Scroll to leftmost position
     pub fn scroll_to_left(&mut self) {
         self.horizontal_scroll = 0;
+    }
+
+    /// Scroll right by half page
+    pub fn scroll_half_page_right(&mut self) {
+        self.horizontal_scroll += self.visible_width / 2;
+    }
+
+    /// Scroll left by half page
+    pub fn scroll_half_page_left(&mut self) {
+        self.horizontal_scroll = self
+            .horizontal_scroll
+            .saturating_sub(self.visible_width / 2);
     }
 
     /// Reset the tab to initial state
@@ -406,6 +425,41 @@ mod tests {
         assert_eq!(tab.horizontal_scroll(), 3);
 
         tab.scroll_to_left();
+        assert_eq!(tab.horizontal_scroll(), 0);
+    }
+
+    #[test]
+    fn tab_scroll_half_page_right_moves_by_half_visible_width() {
+        let mut tab = Tab::new("test".into(), 100);
+        tab.set_visible_width(80);
+        assert_eq!(tab.horizontal_scroll(), 0);
+
+        tab.scroll_half_page_right();
+        assert_eq!(tab.horizontal_scroll(), 40);
+
+        tab.scroll_half_page_right();
+        assert_eq!(tab.horizontal_scroll(), 80);
+    }
+
+    #[test]
+    fn tab_scroll_half_page_left_moves_by_half_visible_width() {
+        let mut tab = Tab::new("test".into(), 100);
+        tab.set_visible_width(80);
+        tab.scroll_half_page_right();
+        tab.scroll_half_page_right();
+        assert_eq!(tab.horizontal_scroll(), 80);
+
+        tab.scroll_half_page_left();
+        assert_eq!(tab.horizontal_scroll(), 40);
+    }
+
+    #[test]
+    fn tab_scroll_half_page_left_stops_at_zero() {
+        let mut tab = Tab::new("test".into(), 100);
+        tab.set_visible_width(80);
+        assert_eq!(tab.horizontal_scroll(), 0);
+
+        tab.scroll_half_page_left();
         assert_eq!(tab.horizontal_scroll(), 0);
     }
 
