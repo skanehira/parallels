@@ -1,0 +1,16 @@
+---
+source: src/tui/renderer.rs
+expression: buffer_to_string(&terminal)
+---
+┌Commands────────────────────────────────────────┐
+│ test                                           │
+├────────────────────────────────────────────────┤
+│[stdout] line3                                  │
+│[stdout] line4                                  │
+│[stdout] line5                                  │
+│[stdout] line6                                  │
+│[stdout] line7                                  │
+│[stdout] line8                                  │
+│[stdout] line9                                  │
+└────────────────────────────────────────────────┘
+ NORMAL | Auto-scroll: OFF | C-h/l:tabs h/l/w/b:ho

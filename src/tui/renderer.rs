@@ -432,6 +432,68 @@ mod tests {
     }
 
     #[test]
+    fn renderer_output_area_scrolled_down_skips_leading_lines() {
+        let mut app = create_test_app_with_output(
+            vec!["test"],
+            vec![
+                ("line0", OutputKind::Stdout),
+                ("line1", OutputKind::Stdout),
+                ("line2", OutputKind::Stdout),
+                ("line3", OutputKind::Stdout),
+                ("line4", OutputKind::Stdout),
+                ("line5", OutputKind::Stdout),
+                ("line6", OutputKind::Stdout),
+                ("line7", OutputKind::Stdout),
+                ("line8", OutputKind::Stdout),
+                ("line9", OutputKind::Stdout),
+            ],
+        );
+        // Scroll down so the first lines are hidden
+        app.tab_manager_mut().current_tab_mut().set_visible_lines(6);
+        app.tab_manager_mut().current_tab_mut().scroll_to_line(3);
+
+        let backend = TestBackend::new(50, 12);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        terminal
+            .draw(|frame| {
+                Renderer::render(frame, &app);
+            })
+            .unwrap();
+
+        insta::assert_snapshot!(buffer_to_string(&terminal));
+    }
+
+    #[test]
+    fn renderer_output_area_scrolled_right_hides_left_columns() {
+        let mut app = create_test_app_with_output(
+            vec!["test"],
+            vec![
+                ("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ", OutputKind::Stdout),
+                ("abcdefghijklmnopqrstuvwxyz0123456789", OutputKind::Stdout),
+            ],
+        );
+        // Horizontal half-page scroll so left columns are hidden
+        app.tab_manager_mut()
+            .current_tab_mut()
+            .set_visible_width(48);
+        app.tab_manager_mut()
+            .current_tab_mut()
+            .scroll_half_page_right();
+
+        let backend = TestBackend::new(50, 8);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        terminal
+            .draw(|frame| {
+                Renderer::render(frame, &app);
+            })
+            .unwrap();
+
+        insta::assert_snapshot!(buffer_to_string(&terminal));
+    }
+
+    #[test]
     fn renderer_status_bar_normal_mode() {
         let app = create_test_app(vec!["test"]);
         let backend = TestBackend::new(50, 8);
